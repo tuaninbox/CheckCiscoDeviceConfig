@@ -24,6 +24,7 @@ optional arguments:
 @Some Example:
 
 1. Interactive mode
+
 python getconfig.py -l WANRouter.txt -s ASR -i
 
 Command: show version
@@ -33,6 +34,7 @@ Technical Support: http://www.cisco.com/techsupport
 <omitted>
 
 2. Command mode
+
 python getconfig.py -l WANRouter.txt -s ASR -c "show version"
 ASR - 10.10.10.1 Configuration:
 Cisco IOS XE Software, Version 03.10.04.S - Extended Support Release
@@ -42,20 +44,24 @@ Copyright (c) 1986-2014 by Cisco Systems, Inc.
 <omitted>
 
 3. Searching mode
+
 python getconfig.py -l WANRouter.txt -s ASR -c "show access-list" -f "10.11.0.0"
 ASR - 10.10.10.1: 10.11.0.0 in show access-list
 
 4. Searching mode all sites
+
 python getconfig.py -l WANRouter.txt -c "show access-list" -f "10.11.0.0"
 ASR - 10.10.10.1: 10.11.0.0 in show access-list
 7000 - 10.10.10.2: 10.11.0.0 in show access-list
 7001 - 10.10.10.3: 10.11.0.0 in show access-list
 
 5. Backup config
+
 python getconfig.py -l WANRouter.txt -c "show run" -w Backup -s ASR
 Configuration of site ASR - 10.10.10.1 saved in Backup/ASR.txt
 
 6. Backup config for all sites
+
 python getconfig.py -l WANRouter.txt -c "show run" -w Backup 
 Configuration of site ASR - 10.10.10.1 saved in Backup/ASR.txt
 Configuration of site 7000 - 10.10.10.2 saved in Backup/7000.txt
