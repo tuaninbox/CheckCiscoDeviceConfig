@@ -1,8 +1,10 @@
 # CheckCiscoDeviceConfig
 @Installation
+
 pip install -r requirements
 
 @Format of device list file -l:
+
 Name,Host,Username,Password,Enable,Group
 ASR,10.10.10.1,,,,WANRouter
 7000,10.10.10.2,,,,WANRouter
