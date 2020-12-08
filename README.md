@@ -1,16 +1,16 @@
 # CheckCiscoDeviceConfig
-@Installation
+## Installation
 
 pip install -r requirements
 
-@Format of device list file -l:
+## Format of device list file -l:
 
 Name,Host,Username,Password,Enable,Group
 ASR,10.10.10.1,,,,WANRouter
 7000,10.10.10.2,,,,WANRouter
 7001,10.10.10.3,,,,WANRouter
 
-@usage: getconfig.py [-h] [-f] -l  [-s] [-w] [-c  | -i]
+## usage: getconfig.py [-h] [-f] -l  [-s] [-w] [-c  | -i]
 
 Get Configuration
 
@@ -23,7 +23,7 @@ optional arguments:
   -c , --command     Command to run
   -i, --interactive  Interactive Session
 
-@Some Example:
+## Some Example:
 
 1. Interactive mode
 
