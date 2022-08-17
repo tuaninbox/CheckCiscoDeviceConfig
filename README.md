@@ -1,6 +1,6 @@
 # CheckCiscoDeviceConfig
 ## Demo
-![Demo](https://github.com/tuaninbox/CheckCiscoDeviceConfig/blob/master/CheckConfig.gif?raw=true)
+![Demo](https://github.com/tuaninbox/CheckCiscoDeviceConfig/blob/main/CheckConfig.gif?raw=true)
 
 ## Installation
 
