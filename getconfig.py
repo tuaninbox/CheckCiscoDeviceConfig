@@ -6,11 +6,29 @@
 
 import concurrent.futures, time, json, sys, datetime, csv, re, argparse, os, logging
 from napalm import get_network_driver
+from cryptography.fernet import Fernet
 
 ############## VARIABLES ##############
 username=str(os.environ.get("acc"))
 password=str(os.environ.get("cred"))
+encryptionkey=str(os.environ.get("enckey"))
 #######################################
+class bcolors:
+    PURPLE = '\033[95m'
+    BLUE = '\033[94m'
+    CYAN = '\033[96m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
+def decryptcred(ciphertext):
+    fernet = Fernet(bytes(encryptionkey,'utf-8'))
+    plaintext = fernet.decrypt(bytes(ciphertext,'utf-8')).decode()
+    return plaintext
+
 
 def removepassword(configuration):
     ret=re.sub(r'snmp-server community \b\w*','snmp-server community <removed>',configuration)
@@ -22,6 +40,7 @@ def removepassword(configuration):
     return ret
    
 def getconfig(hostname,host,user,password,cmd):
+    print(f"Connecting to {hostname} - {host}")
     try:
         driver=get_network_driver('ios')
         #This is for ssh connection
@@ -41,7 +60,9 @@ def getconfig(hostname,host,user,password,cmd):
             device.close()
             return str(hostname) + " - " + str(host) + " Configuration:\n" + removepassword(r[cmd]) 
         except:
-            return "Error: " + str(sys.exc_info()[1]) + " " + str(hostname) + " - " + str(host)
+            writefaillogtofile(sys.exc_info()[1],hostname+"-"+host)
+            #return "Error: " + str(sys.exc_info()[1]) + " " + str(hostname) + " - " + str(host)
+            return f"{bcolors.RED}{sys.exc_info()[1]} for site {hostname} - {host}{bcolors.ENDC}"
 
 #function write config to file
 def getconfigtofile(hostname,host,user,password,cmd,outfolder):
@@ -55,9 +76,9 @@ def getconfigtofile(hostname,host,user,password,cmd,outfolder):
         fp.write(output)
         fp.close()
         #success
-        return "Configuration of site {} - {} saved in {}".format(hostname,host,outfile)
+        return f"{bcolors.BLUE}Configuration of site {hostname} - {host} saved in {outfile}{bcolors.ENDC}"
     except:
-        return "Write configuration to file error {} for site {} - {}".format(sys.exc_info()[1],hostname,host)
+        return f"{bcolors.RED}Write configuration to file error {sys.exc_info()[1]} for site {hostname} - {host}{bcolors.ENDC}"
         #failure
         #return 0
 
@@ -107,20 +128,36 @@ def writesearchoutputtofile(output,outfolder):
         #failure
         #return 0
 
-
+#function write log to file
+def writefaillogtofile(msg,hostname):
+    try:
+        outfolder="./fail/"
+        outfile=outfolder+"/"+str(datetime.datetime.now().strftime("%Y%m%d-%H.%M.%S"))
+        if not os.path.exists(outfolder):
+                os.makedirs(outfolder)
+        #with open(outfile,"wt") as f:
+        #    f.write(str(msg))
+        logging.basicConfig(filename=outfile,level=logging.INFO)
+        logging.info(str(msg)+" - "+str(hostname))
+        #success
+        #return "Failed to connect to {}. Log saved in {}".format(hostname,outfolder+"/"+outfile)
+    except:
+        print(f"Write log to file error {sys.exc_info()[1]}")
+        #failure
+        #return 0
 def getusername(user):
     #print(user,username)
     if str(user) == "":
         return username
     else:
-        return user
+        return decryptcred(user)
 
 def getpassword(passw):
     #print(passw,password)
     if str(passw) == "":
         return password
     else:
-        return passw
+        return decryptcred(passw)
 
 #function write log to file
 def writelogtofile(config,filename,group,date):
