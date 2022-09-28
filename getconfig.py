@@ -29,6 +29,10 @@ def decryptcred(ciphertext):
     plaintext = fernet.decrypt(bytes(ciphertext,'utf-8')).decode()
     return plaintext
 
+def encryptcred(plaintext):
+    fernet = Fernet(bytes(encryptionkey,'utf-8'))
+    ciphertext = fernet.encrypt(plaintext.encode())
+    return ciphertext
 
 def removepassword(configuration):
     ret=re.sub(r'snmp-server community \b\w*','snmp-server community <removed>',configuration)
@@ -46,6 +50,7 @@ def getconfig(hostname,host,user,password,cmd):
         #This is for ssh connection
         device=driver(host,user,password)
         device.open()
+        #r=device.cli(commands=[cmd[0].replace("\n","")])
         r=device.cli(commands=[cmd])
         device.close()
         return str(hostname) + " - " + str(host) + " Configuration:\n" + removepassword(r[cmd])    
@@ -57,6 +62,36 @@ def getconfig(hostname,host,user,password,cmd):
             device=driver(host,user,password,optional_args={"transport":"telnet"})
             device.open()
             r=device.cli(commands=[cmd])
+            device.close()
+            return str(hostname) + " - " + str(host) + " Configuration:\n" + removepassword(r[cmd]) 
+        except:
+            writefaillogtofile(sys.exc_info()[1],hostname+"-"+host)
+            #return "Error: " + str(sys.exc_info()[1]) + " " + str(hostname) + " - " + str(host)
+            return f"{bcolors.RED}{sys.exc_info()[1]} for site {hostname} - {host}{bcolors.ENDC}"
+
+def getcmds(hostname,host,user,password,cmdlist):
+    print(f"Connecting to {hostname} - {host}")
+    try:
+        driver=get_network_driver('ios')
+        #This is for ssh connection
+        device=driver(host,user,password)
+        device.open()
+        output = str(hostname) + " - " + str(host) + " Command Outputs:\n"    
+        for cmd in cmdlist:
+            r=device.cli(commands=[cmd])
+            output=output + "\n" + hostname + "# " + cmd + "\n" + removepassword(r[cmd])
+        device.close()
+        return output
+    except:
+        try:
+            #print("Trying telnet")
+            driver=get_network_driver('ios')
+            #This is for telnet connection
+            device=driver(host,user,password,optional_args={"transport":"telnet"})
+            device.open()
+            r=""
+            for cmd in cmdlist:
+                r = r + device.cli(commands=[cmd])
             device.close()
             return str(hostname) + " - " + str(host) + " Configuration:\n" + removepassword(r[cmd]) 
         except:
@@ -77,6 +112,30 @@ def getconfigtofile(hostname,host,user,password,cmd,outfolder):
         fp.close()
         #success
         return f"{bcolors.BLUE}Configuration of site {hostname} - {host} saved in {outfile}{bcolors.ENDC}"
+    except:
+        return f"{bcolors.RED}Write configuration to file error {sys.exc_info()[1]} for site {hostname} - {host}{bcolors.ENDC}"
+        #failure
+        #return 0
+
+def getcmdstofile(hostname,host,user,password,cmdlist,outfolder,group=""):
+    try:
+        output=getcmds(hostname,host,user,password,cmdlist)
+        x=re.search("^.*timed out for site",output)
+        #x=re.search("^.*onfiguration:",output)
+        if not x:
+            if group=="":
+                outfile=str(outfolder)+"/"+hostname+".txt"
+            else:
+                outfile=str(outfolder)+"/"+str(group)+"/"+hostname+".txt"
+            if not os.path.exists(outfolder+"/"+str(group)):
+                os.makedirs(outfolder+"/"+str(group))
+            fp=open(outfile,"w")
+            fp.write(output)
+            fp.close()
+            #success
+            return f"{bcolors.BLUE}Configuration of site {hostname} - {host} saved in {outfile}{bcolors.ENDC}"
+        else:
+            return f"{bcolors.RED} {output} {bcolors.ENDC}"
     except:
         return f"{bcolors.RED}Write configuration to file error {sys.exc_info()[1]} for site {hostname} - {host}{bcolors.ENDC}"
         #failure
@@ -213,13 +272,15 @@ def main():
     parser=argparse.ArgumentParser(description='Get Configuration')
     #parser.add_argument('-c','--command',type=str,metavar='',help='Command to run')
     parser.add_argument('-f','--find',type=str,metavar='',help='Keyword to find')
-    parser.add_argument('-l','--list',type=str,metavar='',required=True,help='Device List File')
+    parser.add_argument('-l','--list',type=str,metavar='',required=False,help='Device List File')
     parser.add_argument('-s','--site',type=str,metavar='',help='Site to run command')
     parser.add_argument('-w','--writefile',type=str,metavar='',help='Write to File')
     #parser.add_argument('-i','--interactive',action='store_true',help='Interactive Session')
     group=parser.add_mutually_exclusive_group()
     group.add_argument('-c','--command',type=str,metavar='',help='Command to run')
+    group.add_argument('-cf','--commandfile',type=str,metavar='',help='File contains commands to run')
     group.add_argument('-i','--interactive',action='store_true',help='Interactive Session')
+    group.add_argument('-e','--encrypttext',type=str,metavar='',help='Encrypt text used in device list file')
     args=parser.parse_args() 
     try:
         #Read devices file
@@ -231,13 +292,25 @@ def main():
         print(msg)
         sys.exit(1)
 
-    cmd = str(args.command)
+    if args.command:
+        cmd = str(args.command)
+    else:
+        with open(args.commandfile,'rt') as f:
+            cmd = f.readlines()
+    #    cmd = str(args.commandfile)
     findstring = str(args.find)
     t1=time.perf_counter()
     if args.interactive: # interactive mode -i, can't use with -c
         for i in reader:
             if i["Name"] == str(args.site):
                 startinteractivesession(i["Name"],i["Host"],getusername(i["Username"]),getpassword(i["Password"]))
+    elif args.encrypttext: # encrypt text
+        if encryptionkey == "None":
+            encryptionkey = str(Fernet.generate_key())
+            print(f"Generated encryption key: {str(encryptionkey)}")
+        else:
+            print(f"Using current encryption key: {str(encryptionkey)}")
+        print(encryptcred(str(args.encrypttext)))
     elif args.writefile: #non-interactive mode -c, write to file -w <folder>
         if args.site and args.find: #find keyword from command on 1 site
             # print("find command in one site")
@@ -265,6 +338,11 @@ def main():
             for i in reader:
                 if i["Name"] == str(args.site):
                     print(getconfigtofile(i["Name"],i["Host"],getusername(i["Username"]),getpassword(i["Password"]),cmd,args.writefile))
+        elif not args.site and args.commandfile: # run command list for all sites
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                results=[executor.submit(getcmdstofile,i["Name"],i["Host"],getusername(i["Username"]),getpassword(i["Password"]),cmd,args.writefile,i["Group"]) for i in reader if i["Name"][0:1] != "#"]
+                for r in results:
+                    print(r.result())
         else:# not args.site and not args.find: run command from all sites
             if args.writefile: #write to file
                 with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -299,4 +377,3 @@ def main():
     srcfile.close()
 if __name__ == "__main__":
     main()
-    
