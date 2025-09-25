@@ -6,13 +6,20 @@
 
 import concurrent.futures, time, json, sys, datetime, csv, re, argparse, os, logging
 from napalm import get_network_driver
-from cryptography.fernet import Fernet
+# from cryptography.fernet import Fernet
+import getpass
 
 ############## VARIABLES ##############
-username=str(os.environ.get("acc"))
-password=str(os.environ.get("cred"))
-encryptionkey=str(os.environ.get("enckey"))
+username=os.environ.get("username")
+password=os.environ.get("password")
+#encryptionkey=str(os.environ.get("enckey"))
 #######################################
+
+if not username:
+    username = input("Enter username: ")
+if not password:
+    password = getpass.getpass("Enter password: ")
+
 class bcolors:
     PURPLE = '\033[95m'
     BLUE = '\033[94m'
@@ -24,15 +31,15 @@ class bcolors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
-def decryptcred(ciphertext):
-    fernet = Fernet(bytes(encryptionkey,'utf-8'))
-    plaintext = fernet.decrypt(bytes(ciphertext,'utf-8')).decode()
-    return plaintext
+# def decryptcred(ciphertext):
+#     fernet = Fernet(bytes(encryptionkey,'utf-8'))
+#     plaintext = fernet.decrypt(bytes(ciphertext,'utf-8')).decode()
+#     return plaintext
 
-def encryptcred(plaintext):
-    fernet = Fernet(bytes(encryptionkey,'utf-8'))
-    ciphertext = fernet.encrypt(plaintext.encode())
-    return ciphertext
+# def encryptcred(plaintext):
+#     fernet = Fernet(bytes(encryptionkey,'utf-8'))
+#     ciphertext = fernet.encrypt(plaintext.encode())
+#     return ciphertext
 
 def removepassword(configuration):
     ret=re.sub(r'snmp-server community \b\w*','snmp-server community <removed>',configuration)
@@ -43,31 +50,44 @@ def removepassword(configuration):
     ret=re.sub(r'(\slog trap\s)[^\s.]*','\g<1><removed>',ret)
     return ret
    
-def getconfig(hostname,host,user,password,cmd):
+def getconfig(hostname,host,user,password,cmdlist):
     print(f"Connecting to {hostname} - {host}")
     try:
         driver=get_network_driver('ios')
         #This is for ssh connection
         device=driver(host,user,password)
         device.open()
-        #r=device.cli(commands=[cmd[0].replace("\n","")])
-        r=device.cli(commands=[cmd])
+        output = str(hostname) + " - " + str(host) + " Command Outputs:\n"   
+        r=""
+        if isinstance(cmdlist,list):
+            for cmd in cmdlist:
+                r=device.cli(commands=[cmd])
+                output=output + "\n" + hostname + "# " + cmd + "\n" + removepassword(r[cmd])
+        else:
+            r=device.cli(commands=[cmdlist])
+            output=output + "\n" + hostname + "# " + cmdlist + "\n" + removepassword(r[cmdlist])
         device.close()
-        return str(hostname) + " - " + str(host) + " Configuration:\n" + removepassword(r[cmd])    
+        return output
     except:
         try:
-            #print("Trying telnet")
             driver=get_network_driver('ios')
             #This is for telnet connection
             device=driver(host,user,password,optional_args={"transport":"telnet"})
             device.open()
-            r=device.cli(commands=[cmd])
+            r=""
+            if isinstance(cmdlist,list):
+                for cmd in cmdlist:
+                    r=device.cli(commands=[cmd])
+                    output=output + "\n" + hostname + "# " + cmd + "\n" + removepassword(r[cmd])
+            else:
+                r=device.cli(commands=[cmdlist])    
+                output=output + "\n" + hostname + "# " + cmd + "\n" + removepassword(r[cmdlist])
             device.close()
-            return str(hostname) + " - " + str(host) + " Configuration:\n" + removepassword(r[cmd]) 
+            return output
         except:
             writefaillogtofile(sys.exc_info()[1],hostname+"-"+host)
             #return "Error: " + str(sys.exc_info()[1]) + " " + str(hostname) + " - " + str(host)
-            return f"{bcolors.RED}{sys.exc_info()[1]} for site {hostname} - {host}{bcolors.ENDC}"
+            return f"{bcolors.RED}{sys.exc_info()[1]} for {hostname} - {host}{bcolors.ENDC}"
 
 def getcmds(hostname,host,user,password,cmdlist):
     print(f"Connecting to {hostname} - {host}")
@@ -133,7 +153,7 @@ def getcmdstofile(hostname,host,user,password,cmdlist,outfolder,group=""):
             fp.write(output)
             fp.close()
             #success
-            return f"{bcolors.BLUE}Configuration of site {hostname} - {host} saved in {outfile}{bcolors.ENDC}"
+            return f"{bcolors.BLUE}Configuration of {hostname} - {host} saved in {outfile}{bcolors.ENDC}"
         else:
             return f"{bcolors.RED} {output} {bcolors.ENDC}"
     except:
@@ -209,14 +229,16 @@ def getusername(user):
     if str(user) == "":
         return username
     else:
-        return decryptcred(user)
+        #return decryptcred(user)
+        return user
 
 def getpassword(passw):
     #print(passw,password)
     if str(passw) == "":
         return password
     else:
-        return decryptcred(passw)
+        #return decryptcred(passw)
+        return passw
 
 #function write log to file
 def writelogtofile(config,filename,group,date):
@@ -297,6 +319,7 @@ def main():
     else:
         with open(args.commandfile,'rt') as f:
             cmd = f.readlines()
+    # print(cmd)
     #    cmd = str(args.commandfile)
     findstring = str(args.find)
     t1=time.perf_counter()

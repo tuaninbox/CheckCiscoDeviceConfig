@@ -5,6 +5,8 @@
 ## Installation
 
 pip install -r requirements
+or
+pip install napalm
 
 ## Format of device list file -l:
 ```
