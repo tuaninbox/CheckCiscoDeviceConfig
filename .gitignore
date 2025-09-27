@@ -62,8 +62,8 @@ coverage.xml
 Thumbs.db
 
 # userfolder
-fail/
 out/
+logs/
 
 # userfile
 devices.csv

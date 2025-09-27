@@ -13,13 +13,16 @@ import time, sys, datetime, csv, os
 import click
 from core.credentials import get_credentials
 from core.executor import run_parallel
-from core.device import get_config
+from core.device import get_config, get_config_to_file
+from core.utility import format_msg, print_result
+from core.logging_manager import setup_loggers
+
+
 
 # Main function with Click menu
 @click.command(
     context_settings=dict(help_option_names=['-h', '--help']),
-    help="Get Configuration: Run commands on devices, search output, or save results."
-)
+    help="Get Configuration: Run commands on devices, search output, or save results.")
 @click.option('-f', '--find', type=str, help='Keyword to find')
 @click.option('-l', '--list', type=str, required=False, help='Device List File')
 @click.option('-s', '--site', type=str, help='Site to run command')
@@ -29,7 +32,9 @@ from core.device import get_config
 @click.option('-i', '--interactive', is_flag=True, help='Interactive Session')
 @click.pass_context
 def main(ctx,find, list, site, writefile, command, commandfile, interactive):
-    
+    # Call this once during initialization
+    success_logger, fail_logger = setup_loggers()
+
     # If no options are provided, show help
     if not any([find, list, site, writefile, command, commandfile]):
         click.echo(ctx.get_help())
@@ -40,7 +45,6 @@ def main(ctx,find, list, site, writefile, command, commandfile, interactive):
     if sum(bool(x) for x in exclusive) > 1:
         raise click.UsageError("Only one of --command, --commandfile, or --interactive can be used.")
 
-    
     username, password = get_credentials()
     try:
         #Read devices file
@@ -108,13 +112,13 @@ def main(ctx,find, list, site, writefile, command, commandfile, interactive):
                             password if i["Password"] == "" else i["Password"],cmd,writefile,i["Group"]) for i in reader if i["Name"][0:1] != "#"]
                 for r in results:
                     print(r.result())
+##### GOOD #####
         else:# not args.site and not args.find: run command from all sites
             if writefile: #write to file
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    results=[executor.submit(getconfigtofile,i["Name"],i["Host"],username if i["Username"] == "" else i["Username"],
-                            password if i["Password"] == "" else i["Password"],cmd,writefile) for i in reader if i["Name"][0:1] != "#"]
-                    for r in results:
-                        print(r.result())
+                results=run_parallel(reader, cmd, username, password, get_config_to_file,outfolder=writefile)
+            for r in results:
+                # print(r.result())
+                print(r)
     else: #non-interactive mode -c, write to stdout, without -w
         if site and find: #1 site + find keywords
             # print("find command in one site")
@@ -139,15 +143,15 @@ def main(ctx,find, list, site, writefile, command, commandfile, interactive):
                 if i["Name"] == str(site):
                     print(getconfig(i["Name"],i["Host"],username if i["Username"] == "" else i["Username"],
                             password if i["Password"] == "" else i["Password"],cmd))
+##### GOOD #####
         else:# not args.site and not args.find: run command on all sites
-            results=run_parallel(reader, cmd, username, password, get_config)
+            results=run_parallel(reader, cmd, username, password, get_config, success_logger=success_logger, fail_logger=fail_logger)
             # print("get config from all sites")         
-            # print(username,password)         
             for r in results:
                 # print(r.result())
-                print(r)
+                print_result(r)
     t2=time.perf_counter()
-    print(f"Finished after {t2-t1}")
+    print(format_msg(f"Finished after {t2-t1}","GREEN"))
     srcfile.close()
 
 

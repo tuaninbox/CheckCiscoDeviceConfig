@@ -1,27 +1,19 @@
   
 from napalm import get_network_driver
-from core.utility import remove_password, write_log_to_file, write_fail_log_to_file
-import traceback
+from core.utility import remove_password, write_log_to_file, write_fail_log_to_file, format_msg
+import traceback, sys, os
 
-class bcolors:
-    PURPLE = '\033[95m'
-    BLUE = '\033[94m'
-    CYAN = '\033[96m'
-    GREEN = '\033[92m'
-    YELLOW = '\033[93m'
-    RED = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
-
-def get_config(hostname,host,user,password,cmdlist):
-    print(f"{bcolors.BLUE}Connecting to {hostname} - {host}{bcolors.ENDC}")
+###### GOOD #####
+def get_config_old(hostname,host,user,password,cmdlist,debug=0):
+    # print(format_msg(f"Connecting to {hostname} - {host}{bcolors.ENDC}")
+    print(format_msg(f"Connecting to {hostname} - {host}","BLUE"))
     try:
         driver=get_network_driver('ios')
         #This is for ssh connection
         device=driver(host,user,password)
         device.open()
-        output =f"\n{bcolors.CYAN}{str(hostname)}  - {str(host)} Command Outputs:{bcolors.ENDC}\n"
+        # output =f"\n{bcolors.CYAN}{str(hostname)}  - {str(host)} Command Outputs:{bcolors.ENDC}\n"
+        output = format_msg(f"\n{str(hostname)}  - {str(host)} Command Outputs:\n","CYAN")
         r=""
         if isinstance(cmdlist,list):
             for cmd in cmdlist:
@@ -49,21 +41,100 @@ def get_config(hostname,host,user,password,cmdlist):
             device.close()
             return output
         except Exception as e:
-            # traceback.print_exc()
-            tb = traceback.extract_tb(sys.exc_info()[2])[0]  # Get last traceback entry
-            line_number = tb.lineno
-            filename = tb.filename
-            failed_line = tb.line
+            if debug:
+                # traceback.print_exc()
+                tb = traceback.extract_tb(sys.exc_info()[2])[0]  # Get last traceback entry
+                line_number = tb.lineno
+                filename = tb.filename
+                failed_line = tb.line
 
-            write_fail_log_to_file(e, f"{hostname}-{host} at {filename}:{line_number} → {failed_line}")
-            return f"{bcolors.RED}{e} at line {line_number} in {filename} → {failed_line} for {hostname} - {host}{bcolors.ENDC}"
-        # except:
-        #     writefaillogtofile(sys.exc_info()[1],hostname+"-"+host)
-        #     #return "Error: " + str(sys.exc_info()[1]) + " " + str(hostname) + " - " + str(host)
-        #     return f"{bcolors.RED}{sys.exc_info()[1]} for {hostname} - {host}{bcolors.ENDC}"
+                write_fail_log_to_file(e, f"{hostname}-{host} at {filename}:{line_number} → {failed_line}")
+                return format_msg(f"{e} at line {line_number} in {filename} → {failed_line} for {hostname} - {host}","RED")
+            else:
+                write_fail_log_to_file(sys.exc_info()[1],hostname+"-"+host)
+                return format_msg(f"{sys.exc_info()[1]} for {hostname} - {host}","RED")
+
+def get_config_old1(hostname, host, user, password, cmdlist, debug=0):
+    print(format_msg(f"Connecting to {hostname} - {host}", "BLUE"))
+
+    def run_session(transport=None):
+        driver = get_network_driver('ios')
+        optional_args = {"transport": transport} if transport else {}
+        device = driver(host, user, password, optional_args=optional_args)
+        device.open()
+
+        output = format_msg(f"\n{hostname} - {host} Command Outputs:\n", "CYAN")
+        commands = cmdlist if isinstance(cmdlist, list) else [cmdlist]
+
+        for cmd in commands:
+            r = device.cli([cmd])
+            output += f"\n{hostname}# {cmd}\n{remove_password(r[cmd])}"
+
+        device.close()
+        return output
+
+    try:
+        return run_session()
+    except:
+        try:
+            return run_session(transport="telnet")
+        except Exception as e:
+            tb = traceback.extract_tb(sys.exc_info()[2])[0]
+            line_info = f"{tb.filename}:{tb.lineno} → {tb.line}"
+            msg = f"{e} at line {line_info} for {hostname} - {host}"
+
+            write_fail_log_to_file(e if debug else sys.exc_info()[1], f"{hostname}-{host} at {line_info}")
+            return format_msg(msg, "RED")
+
+def get_config(hostname, host, user, password, cmdlist, success_logger=None, fail_logger=None, debug=0):
+    result = {
+        "hostname": hostname,
+        "host": host,
+        "success": False,
+        "output": "",
+        "error": None
+    }
+
+    def run_session(optional_args=None):
+        driver = get_network_driver('ios')
+        device = driver(host, user, password, optional_args=optional_args or {})
+        device.open()
+
+        commands = cmdlist if isinstance(cmdlist, list) else [cmdlist]
+        output_lines = [f"{hostname} - {host} Command Outputs:"]
+        for cmd in commands:
+            r = device.cli([cmd])
+            output_lines.append(f"{hostname}# {cmd}\n{remove_password(r[cmd])}")
+
+        device.close()
+        result["success"] = True
+        result["output"] = "\n".join(output_lines)
+        if success_logger:
+            success_logger.info(f"{hostname} → Configuration retrieved successfully")
+        return result
+
+    try:
+        return run_session()
+    except:
+        try:
+            return run_session(optional_args={"transport": "telnet"})
+        except Exception as e:
+            tb = traceback.extract_tb(sys.exc_info()[2])[0]
+            result["error"] = {
+                "message": str(e),
+                "filename": tb.filename,
+                "line": tb.lineno,
+                "code": tb.line
+            }
+            fail_msg = str(e if debug else sys.exc_info()[1])
+            if fail_logger:
+                fail_logger.error(f"{hostname} → {fail_msg} at {tb.filename}:{tb.lineno} → {tb.line}")
+            return result
+
+
 
 def get_cmds(hostname,host,user,password,cmdlist):
-    print(f"Connecting to {hostname} - {host}")
+    print(format_msg(f"Connecting to {hostname} - {host}","BLUE"))
     try:
         driver=get_network_driver('ios')
         #This is for ssh connection
@@ -72,7 +143,7 @@ def get_cmds(hostname,host,user,password,cmdlist):
         output = str(hostname) + " - " + str(host) + " Command Outputs:\n"    
         for cmd in cmdlist:
             r=device.cli(commands=[cmd])
-            output=output + "\n" + hostname + "# " + cmd + "\n" + removepassword(r[cmd])
+            output=output + "\n" + hostname + "# " + cmd + "\n" + remove_password(r[cmd])
         device.close()
         return output
     except:
@@ -86,17 +157,17 @@ def get_cmds(hostname,host,user,password,cmdlist):
             for cmd in cmdlist:
                 r = r + device.cli(commands=[cmd])
             device.close()
-            return str(hostname) + " - " + str(host) + " Configuration:\n" + removepassword(r[cmd]) 
+            return str(hostname) + " - " + str(host) + " Configuration:\n" + remove_password(r[cmd]) 
         except:
             write_fail_log_to_file(sys.exc_info()[1],hostname+"-"+host)
             #return "Error: " + str(sys.exc_info()[1]) + " " + str(hostname) + " - " + str(host)
-            return f"{bcolors.RED}{sys.exc_info()[1]} for site {hostname} - {host}{bcolors.ENDC}"
+            return format_msg(f"{sys.exc_info()[1]} for site {hostname} - {host}","RED")
 
-
+###### GOOD #####
 #function write config to file
 def get_config_to_file(hostname,host,user,password,cmd,outfolder):
     try:
-        output=getconfig(hostname,host,user,password,cmd)
+        output=get_config(hostname,host,user,password,cmd)
         #outfolder="./"+outfolder+"/"+str(datetime.datetime.now().date())
         outfile=str(outfolder)+"/"+hostname+".txt"
         if not os.path.exists(outfolder):
@@ -105,15 +176,15 @@ def get_config_to_file(hostname,host,user,password,cmd,outfolder):
         fp.write(output)
         fp.close()
         #success
-        return f"{bcolors.BLUE}Configuration of site {hostname} - {host} saved in {outfile}{bcolors.ENDC}"
+        return format_msg(f"Configuration of site {hostname} - {host} saved in {outfile}")
     except:
-        return f"{bcolors.RED}Write configuration to file error {sys.exc_info()[1]} for site {hostname} - {host}{bcolors.ENDC}"
+        return format_msg(f"Write configuration to file error {sys.exc_info()[1]} for site {hostname} - {host}")
         #failure
         #return 0
 
-def getcmdstofile(hostname,host,user,password,cmdlist,outfolder,group=""):
+def get_cmds_to_file(hostname,host,user,password,cmdlist,outfolder,group=""):
     try:
-        output=getcmds(hostname,host,user,password,cmdlist)
+        output=get_cmds(hostname,host,user,password,cmdlist)
         x=re.search("^.*timed out for site",output)
         #x=re.search("^.*onfiguration:",output)
         if not x:
@@ -127,11 +198,11 @@ def getcmdstofile(hostname,host,user,password,cmdlist,outfolder,group=""):
             fp.write(output)
             fp.close()
             #success
-            return f"{bcolors.BLUE}Configuration of {hostname} - {host} saved in {outfile}{bcolors.ENDC}"
+            return format_msg(f"Configuration of {hostname} - {host} saved in {outfile}")
         else:
-            return f"{bcolors.RED} {output} {bcolors.ENDC}"
+            return format_msg(f"{output}","RED")
     except:
-        return f"{bcolors.RED}Write configuration to file error {sys.exc_info()[1]} for site {hostname} - {host}{bcolors.ENDC}"
+        return format_msg(f"Write configuration to file error {sys.exc_info()[1]} for site {hostname} - {host}")
         #failure
         #return 0
 

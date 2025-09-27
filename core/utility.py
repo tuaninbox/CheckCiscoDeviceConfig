@@ -1,4 +1,33 @@
-import re, logging, os
+import re, os, sys, datetime
+
+
+class bcolors:
+    PURPLE = '\033[95m'
+    BLUE = '\033[94m'
+    CYAN = '\033[96m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
+def format_msg(msg,color=""):
+    if color == "":
+         return f"{msg}"
+    else:
+        return f"{getattr(bcolors,color)}{msg}{bcolors.ENDC}"
+    
+def print_result(result, colorize=True):
+    if result["success"]:
+        header = format_msg(f"{result['hostname']} - {result['host']}", "CYAN") if colorize else f"{result['hostname']} - {result['host']}"
+        print(header)
+        print(result["output"])
+    else:
+        err = result["error"]
+        msg = f"{err['message']} at line {err['line']} in {err['filename']} → {err['code']}" if err else "Unknown error"
+        print(format_msg(msg, "RED") if colorize else msg)
+
 
 def remove_password(configuration):
     ret=re.sub(r'snmp-server community \b\w*','snmp-server community <removed>',configuration)
@@ -9,23 +38,15 @@ def remove_password(configuration):
     ret=re.sub(r'(\slog trap\s)[^\s.]*','\g<1><removed>',ret)
     return ret
 
+
+
+
 #function write log to file
-def write_fail_log_to_file(msg,hostname):
+def write_fail_log_to_file(msg, hostname):
     try:
-        outfolder="./fail/"
-        outfile=outfolder+"/"+str(datetime.datetime.now().strftime("%Y%m%d-%H.%M.%S"))
-        if not os.path.exists(outfolder):
-                os.makedirs(outfolder)
-        #with open(outfile,"wt") as f:
-        #    f.write(str(msg))
-        logging.basicConfig(filename=outfile,level=logging.INFO)
-        logging.info(str(msg)+" - "+str(hostname))
-        #success
-        #return "Failed to connect to {}. Log saved in {}".format(hostname,outfolder+"/"+outfile)
-    except:
-        print(f"Write log to file error {sys.exc_info()[1]}")
-        #failure
-        #return 0
+        logging.info(f"{hostname} → {msg}")
+    except Exception as e:
+        print(f"Logging error: {e}")
 
 #function write log to file
 def write_log_to_file(config,filename,group,date):
