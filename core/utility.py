@@ -25,7 +25,7 @@ def print_result(result, colorize=True):
         print(result["output"])
     else:
         err = result["error"]
-        msg = f"{err['message']} at line {err['line']} in {err['filename']} → {err['code']}" if err else "Unknown error"
+        msg = f"{result['hostname']} - {result['host']}: {err['message']} at line {err['line']} in {err['filename']}" # → {err['code']}" if err else "Unknown error"
         print(format_msg(msg, "RED") if colorize else msg)
 
 

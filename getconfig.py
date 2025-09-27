@@ -145,7 +145,7 @@ def main(ctx,find, list, site, writefile, command, commandfile, interactive):
                             password if i["Password"] == "" else i["Password"],cmd))
 ##### GOOD #####
         else:# not args.site and not args.find: run command on all sites
-            results=run_parallel(reader, cmd, username, password, get_config, success_logger=success_logger, fail_logger=fail_logger)
+            results=run_parallel(reader, cmd, username, password, get_config, success_logger=success_logger, fail_logger=fail_logger, debug=1)
             # print("get config from all sites")         
             for r in results:
                 print_result(r)

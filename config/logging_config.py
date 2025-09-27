@@ -1,6 +1,6 @@
 # config/logging_config.py
 LOGGING_CONFIG = {
-    "console": True,
+    "console": False,
     "logdir": "./logs",
     "success_logfile": "success.log",
     "fail_logfile": "fail.log",
