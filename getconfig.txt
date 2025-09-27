@@ -3,22 +3,41 @@
 #Author: Tuan Hoang
 #Version: 1.0
 #
+import warnings
+#from urllib3.exceptions import NotOpenSSLWarning
+
+warnings.filterwarnings("ignore")
 
 import concurrent.futures, time, json, sys, datetime, csv, re, argparse, os, logging
 from napalm import get_network_driver
 # from cryptography.fernet import Fernet
-import getpass
+import getpass, traceback, click
 
 ############## VARIABLES ##############
-username=os.environ.get("username")
-password=os.environ.get("password")
+# username=os.environ.get("username")
+# password=os.environ.get("password")
 #encryptionkey=str(os.environ.get("enckey"))
 #######################################
 
-if not username:
-    username = input("Enter username: ")
-if not password:
-    password = getpass.getpass("Enter password: ")
+import os
+import getpass
+
+def get_credentials():
+    username = os.environ.get("username")
+    password = os.environ.get("password")
+
+    if not username:
+        username = input("Enter username: ")
+    if not password:
+        password = getpass.getpass("Enter password: ")
+
+    # Ask user if they want to save credentials
+    # save = input("Do you want to save these credentials for future use? (y/n): ").strip().lower()
+    # if save == 'y':
+    #     os.environ["acc"] = username
+    #     os.environ["cred"] = password
+    #     print("Credentials saved in environment for this session.")
+    return username, password
 
 class bcolors:
     PURPLE = '\033[95m'
@@ -52,6 +71,7 @@ def removepassword(configuration):
    
 def getconfig(hostname,host,user,password,cmdlist):
     print(f"Connecting to {hostname} - {host}")
+    print(user,password)
     try:
         driver=get_network_driver('ios')
         #This is for ssh connection
@@ -84,10 +104,19 @@ def getconfig(hostname,host,user,password,cmdlist):
                 output=output + "\n" + hostname + "# " + cmd + "\n" + removepassword(r[cmdlist])
             device.close()
             return output
-        except:
-            writefaillogtofile(sys.exc_info()[1],hostname+"-"+host)
-            #return "Error: " + str(sys.exc_info()[1]) + " " + str(hostname) + " - " + str(host)
-            return f"{bcolors.RED}{sys.exc_info()[1]} for {hostname} - {host}{bcolors.ENDC}"
+        except Exception as e:
+            # traceback.print_exc()
+            tb = traceback.extract_tb(sys.exc_info()[2])[0]  # Get last traceback entry
+            line_number = tb.lineno
+            filename = tb.filename
+            failed_line = tb.line
+
+            writefaillogtofile(e, f"{hostname}-{host} at {filename}:{line_number} → {failed_line}")
+            return f"{bcolors.RED}{e} at line {line_number} in {filename} → {failed_line} for {hostname} - {host}{bcolors.ENDC}"
+        # except:
+        #     writefaillogtofile(sys.exc_info()[1],hostname+"-"+host)
+        #     #return "Error: " + str(sys.exc_info()[1]) + " " + str(hostname) + " - " + str(host)
+        #     return f"{bcolors.RED}{sys.exc_info()[1]} for {hostname} - {host}{bcolors.ENDC}"
 
 def getcmds(hostname,host,user,password,cmdlist):
     print(f"Connecting to {hostname} - {host}")
@@ -225,7 +254,7 @@ def writefaillogtofile(msg,hostname):
         #failure
         #return 0
 def getusername(user):
-    #print(user,username)
+    # Continue with your logic using username and password
     if str(user) == "":
         return username
     else:
@@ -290,23 +319,53 @@ def startinteractivesession(hostname,host,user,password):
         except:
             return "Error: " + str(sys.exc_info()[1]) + " " + str(hostname) + " - " + str(host)
 
-def main():
-    parser=argparse.ArgumentParser(description='Get Configuration')
-    #parser.add_argument('-c','--command',type=str,metavar='',help='Command to run')
-    parser.add_argument('-f','--find',type=str,metavar='',help='Keyword to find')
-    parser.add_argument('-l','--list',type=str,metavar='',required=False,help='Device List File')
-    parser.add_argument('-s','--site',type=str,metavar='',help='Site to run command')
-    parser.add_argument('-w','--writefile',type=str,metavar='',help='Write to File')
-    #parser.add_argument('-i','--interactive',action='store_true',help='Interactive Session')
-    group=parser.add_mutually_exclusive_group()
-    group.add_argument('-c','--command',type=str,metavar='',help='Command to run')
-    group.add_argument('-cf','--commandfile',type=str,metavar='',help='File contains commands to run')
-    group.add_argument('-i','--interactive',action='store_true',help='Interactive Session')
-    group.add_argument('-e','--encrypttext',type=str,metavar='',help='Encrypt text used in device list file')
-    args=parser.parse_args() 
+@click.command(
+    context_settings=dict(help_option_names=['-h', '--help']),
+    help="Get Configuration: Run commands on devices, search output, or save results."
+)
+@click.option('-f', '--find', type=str, help='Keyword to find')
+@click.option('-l', '--list', type=str, required=False, help='Device List File')
+@click.option('-s', '--site', type=str, help='Site to run command')
+@click.option('-w', '--writefile', type=str, help='Write to File')
+@click.option('-c', '--command', type=str, help='Command to run')
+@click.option('-cf', '--commandfile', type=str, help='File contains commands to run')
+@click.option('-i', '--interactive', is_flag=True, help='Interactive Session')
+@click.pass_context
+def main(ctx,find, list, site, writefile, command, commandfile, interactive):
+    # Enforce mutual exclusivity manually
+    # parser=argparse.ArgumentParser(description='Get Configuration')
+    # #parser.add_argument('-c','--command',type=str,metavar='',help='Command to run')
+    # parser.add_argument('-f','--find',type=str,metavar='',help='Keyword to find')
+    # parser.add_argument('-l','--list',type=str,metavar='',required=False,help='Device List File')
+    # parser.add_argument('-s','--site',type=str,metavar='',help='Site to run command')
+    # parser.add_argument('-w','--writefile',type=str,metavar='',help='Write to File')
+    # #parser.add_argument('-i','--interactive',action='store_true',help='Interactive Session')
+    # group=parser.add_mutually_exclusive_group()
+    # group.add_argument('-c','--command',type=str,metavar='',help='Command to run')
+    # group.add_argument('-cf','--commandfile',type=str,metavar='',help='File contains commands to run')
+    # group.add_argument('-i','--interactive',action='store_true',help='Interactive Session')
+    # group.add_argument('-e','--encrypttext',type=str,metavar='',help='Encrypt text used in device list file')
+    # args=parser.parse_args() 
+
+    # if '-h' in sys.argv or '--help' in sys.argv:
+    #     # Skip credential prompt if help is requested
+    #     print("Help requested. Skipping credential input.")
+    #     return
+        # If no options are provided, show help
+    if not any([find, list, site, writefile, command, commandfile]):
+        click.echo(ctx.get_help())
+        ctx.exit()
+
+    exclusive = [command, commandfile, interactive]
+    if sum(bool(x) for x in exclusive) > 1:
+        raise click.UsageError("Only one of --command, --commandfile, or --interactive can be used.")
+
+    click.echo(f"Find: {find}, List: {list}, Site: {site}, Writefile: {writefile}")
+    username, password = get_credentials()
     try:
         #Read devices file
-        csvfile=args.list
+        # csvfile=args.list
+        csvfile=list
         srcfile = open(csvfile,"rt")
         reader = csv.DictReader(srcfile)
     except:
@@ -314,85 +373,122 @@ def main():
         print(msg)
         sys.exit(1)
 
-    if args.command:
-        cmd = str(args.command)
+    #if args.command:
+    if command:
+        #cmd = str(args.command)
+        cmd = str(command)
     else:
-        with open(args.commandfile,'rt') as f:
+        #with open(args.commandfile,'rt') as f:
+        with open(commandfile,'rt') as f:
             cmd = f.readlines()
-    # print(cmd)
-    #    cmd = str(args.commandfile)
-    findstring = str(args.find)
+       
+    #findstring = str(args.find)
+    findstring = str(find)
     t1=time.perf_counter()
-    if args.interactive: # interactive mode -i, can't use with -c
+    #if args.interactive: # interactive mode -i, can't use with -c
+    if interactive: # interactive mode -i, can't use with -c
         for i in reader:
-            if i["Name"] == str(args.site):
-                startinteractivesession(i["Name"],i["Host"],getusername(i["Username"]),getpassword(i["Password"]))
-    elif args.encrypttext: # encrypt text
-        if encryptionkey == "None":
-            encryptionkey = str(Fernet.generate_key())
-            print(f"Generated encryption key: {str(encryptionkey)}")
-        else:
-            print(f"Using current encryption key: {str(encryptionkey)}")
-        print(encryptcred(str(args.encrypttext)))
-    elif args.writefile: #non-interactive mode -c, write to file -w <folder>
-        if args.site and args.find: #find keyword from command on 1 site
+            # if i["Name"] == str(args.site):
+            if i["Name"] == str(site):
+                startinteractivesession(i["Name"],i["Host"],username if i["Username"] == "" else i["Username"],
+                            password if i["Password"] == "" else i["Password"],)
+    # elif args.encrypttext: # encrypt text
+    #     if encryptionkey == "None":
+    #         encryptionkey = str(Fernet.generate_key())
+    #         print(f"Generated encryption key: {str(encryptionkey)}")
+    #     else:
+    #         print(f"Using current encryption key: {str(encryptionkey)}")
+    #     print(encryptcred(str(args.encrypttext)))
+    #elif args.writefile: #non-interactive mode -c, write to file -w <folder>
+    elif writefile: #non-interactive mode -c, write to file -w <folder>
+        # if args.site and args.find: #find keyword from command on 1 site
+        if site and find: #find keyword from command on 1 site
             # print("find command in one site")
             for i in reader:
-                if i["Name"] == str(args.site):
-                    result=searchconfig(i["Name"],i["Host"],getusername(i["Username"]),getpassword(i["Password"]),cmd,findstring,args.writefile)
-                    outfile=str(args.writefile)+"/"+i["Name"]+"output.txt"
+                # if i["Name"] == str(args.site):
+                if i["Name"] == str(site):
+                    result=searchconfig(i["Name"],i["Host"],username if i["Username"] == "" else i["Username"],
+                            password if i["Password"] == "" else i["Password"],cmd,findstring,writefile)
+                    #outfile=str(args.writefile)+"/"+i["Name"]+"output.txt"
+                    outfile=str(writefile)+"/"+i["Name"]+"output.txt"
                     with open(outfile,'w') as file:
                         print("Output of site {} - {} saved in {}".format(hostname,host,outfile))
                         file.write(r.result())   
-        elif not args.site and args.find: #find keyword from command on all sites
+        # elif not args.site and args.find: #find keyword from command on all sites
+        elif not site and find: #find keyword from command on all sites
             # print("find command in all sites")
             with concurrent.futures.ThreadPoolExecutor() as executor:
-                results=[executor.submit(searchconfig,i["Name"],i["Host"],getusername(i["Username"]),getpassword(i["Password"]),cmd,findstring) for i in reader if i['Name'][0:1] != "#"]
+                results=[executor.submit(searchconfig,i["Name"],i["Host"],username if i["Username"] == "" else i["Username"],
+                            password if i["Password"] == "" else i["Password"],cmd,findstring) for i in reader if i['Name'][0:1] != "#"]
                 # for r in results:
                 #     print(r.result())
-                outfile=str(args.writefile)+"/"+"find output.txt "
+                # outfile=str(args.writefile)+"/"+"find output.txt "
+                outfile=str(writefile)+"/"+"find output.txt "
                 print("Search Result is being saved in {}".format(outfile))
                 with open(outfile,'w') as file:
                     for r in results:
                         print(".")
                         file.write(r.result()+"\n")   
-        elif args.site and not args.find: #run command on 1 site
+        #elif args.site and not args.find: #run command on 1 site
+        elif site and not find: #run command on 1 site
             # print( "get config from one site")
             for i in reader:
-                if i["Name"] == str(args.site):
-                    print(getconfigtofile(i["Name"],i["Host"],getusername(i["Username"]),getpassword(i["Password"]),cmd,args.writefile))
-        elif not args.site and args.commandfile: # run command list for all sites
+                #if i["Name"] == str(args.site):
+                if i["Name"] == str(site):
+                    print(getconfigtofile(i["Name"],i["Host"],username if i["Username"] == "" else i["Username"],
+                            password if i["Password"] == "" else i["Password"],cmd,writefile))
+        # elif not args.site and args.commandfile: # run command list for all sites
+        elif not site and commandfile: # run command list for all sites
             with concurrent.futures.ThreadPoolExecutor() as executor:
-                results=[executor.submit(getcmdstofile,i["Name"],i["Host"],getusername(i["Username"]),getpassword(i["Password"]),cmd,args.writefile,i["Group"]) for i in reader if i["Name"][0:1] != "#"]
+                results=[executor.submit(getcmdstofile,i["Name"],i["Host"],username if i["Username"] == "" else i["Username"],
+                            password if i["Password"] == "" else i["Password"],cmd,writefile,i["Group"]) for i in reader if i["Name"][0:1] != "#"]
                 for r in results:
                     print(r.result())
         else:# not args.site and not args.find: run command from all sites
-            if args.writefile: #write to file
+            #if args.writefile: #write to file
+            if writefile: #write to file
                 with concurrent.futures.ThreadPoolExecutor() as executor:
-                    results=[executor.submit(getconfigtofile,i["Name"],i["Host"],getusername(i["Username"]),getpassword(i["Password"]),cmd,args.writefile) for i in reader if i["Name"][0:1] != "#"]
+                    results=[executor.submit(getconfigtofile,i["Name"],i["Host"],username if i["Username"] == "" else i["Username"],
+                            password if i["Password"] == "" else i["Password"],cmd,writefile) for i in reader if i["Name"][0:1] != "#"]
                     for r in results:
                         print(r.result())
     else: #non-interactive mode -c, write to stdout, without -w
-        if args.site and args.find: #1 site + find keywords
+        # if args.site and args.find: #1 site + find keywords
+        if site and find: #1 site + find keywords
             # print("find command in one site")
             for i in reader:
-                if i["Name"] == str(args.site):
-                    print(searchconfig(i["Name"],i["Host"],getusername(i["Username"]),getpassword(i["Password"]),cmd,findstring))
-        elif not args.site and args.find: # all sites + find keywords
+                # if i["Name"] == str(args.site):
+                if i["Name"] == str(site):
+                    print(searchconfig(i["Name"],i["Host"],username if i["Username"] == "" else i["Username"],
+                            password if i["Password"] == "" else i["Password"],cmd,findstring))
+        # elif not args.site and args.find: # all sites + find keywords
+        elif not site and find: # all sites + find keywords
             # print("find command in all sites")
             with concurrent.futures.ThreadPoolExecutor() as executor:
-                results=[executor.submit(searchconfig,i["Name"],i["Host"],getusername(i["Username"]),getpassword(i["Password"]),cmd,findstring) for i in reader if i['Name'][0:1] != "#"]
+                results=[executor.submit(searchconfig,i["Name"],i["Host"],username if i["Username"] == "" else i["Username"],
+                            password if i["Password"] == "" else i["Password"],cmd,findstring) for i in reader if i['Name'][0:1] != "#"]
                 for r in results:
                     print(r.result())
-        elif args.site and not args.find: # run command on 1 site
+        # elif args.site and not args.find: # run command on 1 site
+        elif site and not find: # run command on 1 site
             # print( "get config from one site")
             for i in reader:
-                if i["Name"] == str(args.site):
-                    print(getconfig(i["Name"],i["Host"],getusername(i["Username"]),getpassword(i["Password"]),cmd))
+                # if i["Name"] == str(args.site):
+                if i["Name"] == str(site):
+                    print(getconfig(i["Name"],i["Host"],username if i["Username"] == "" else i["Username"],
+                            password if i["Password"] == "" else i["Password"],cmd))
         else:# not args.site and not args.find: run command on all sites
             # print("get config from all sites")         
+            # print(username,password)
             with concurrent.futures.ThreadPoolExecutor() as executor:
-                results=[executor.submit(getconfig,i["Name"],i["Host"],getusername(i["Username"]),getpassword(i["Password"]),cmd) for i in reader if i["Name"][0:1] != "#"]
+                results=[executor.submit(
+                            getconfig,
+                            i["Name"],
+                            i["Host"],
+                            username if i["Username"] == "" else i["Username"],
+                            password if i["Password"] == "" else i["Password"],
+                            cmd
+                            ) for i in reader if i["Name"][0:1] != "#"]
                 for r in results:
                     print(r.result())
     t2=time.perf_counter()
