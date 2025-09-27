@@ -148,7 +148,6 @@ def main(ctx,find, list, site, writefile, command, commandfile, interactive):
             results=run_parallel(reader, cmd, username, password, get_config, success_logger=success_logger, fail_logger=fail_logger)
             # print("get config from all sites")         
             for r in results:
-                # print(r.result())
                 print_result(r)
     t2=time.perf_counter()
     print(format_msg(f"Finished after {t2-t1}","GREEN"))
