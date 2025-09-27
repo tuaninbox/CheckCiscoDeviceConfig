@@ -101,7 +101,7 @@ def get_config(hostname, host, user, password, cmdlist, success_logger=None, fai
         device.open()
 
         commands = cmdlist if isinstance(cmdlist, list) else [cmdlist]
-        output_lines = [f"{hostname} - {host} Command Outputs:"]
+        output_lines = []
         for cmd in commands:
             r = device.cli([cmd])
             output_lines.append(f"{hostname}# {cmd}\n{remove_password(r[cmd])}")
