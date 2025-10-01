@@ -13,7 +13,7 @@ import time, sys, datetime, csv, os
 import click
 from core.credentials import get_credentials
 from core.executor import run_parallel
-from core.device import get_config, get_config_to_file
+# from core.device import get_config, get_config_to_file
 from core.utility import format_msg, print_result
 from core.logging_manager import setup_loggers
 
@@ -145,8 +145,21 @@ def main(ctx,find, list, site, writefile, command, commandfile, interactive):
                             password if i["Password"] == "" else i["Password"],cmd))
 ##### GOOD #####
         else:# not args.site and not args.find: run command on all sites
-            results=run_parallel(reader, cmd, username, password, get_config, success_logger=success_logger, fail_logger=fail_logger, debug=1)
-            # print("get config from all sites")         
+            # results=run_parallel(reader, cmd, username, password, get_config, success_logger=success_logger, fail_logger=fail_logger, debug=1)
+            # # print("get config from all sites")         
+            # for r in results:
+            #     print_result(r)
+            results = run_parallel(
+                reader,
+                cmd,
+                username,
+                password,
+                run_func=lambda retriever: retriever.get_config(),
+                success_logger=success_logger,
+                fail_logger=fail_logger,
+                debug=1
+                )
+            
             for r in results:
                 print_result(r)
     t2=time.perf_counter()
