@@ -64,6 +64,7 @@ Thumbs.db
 # userfolder
 out/
 logs/
+output/
 
 # userfile
 devices.csv
