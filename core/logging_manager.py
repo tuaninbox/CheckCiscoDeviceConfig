@@ -11,6 +11,7 @@ def setup_loggers():
     # Success logger
     success_logger = logging.getLogger("success_logger")
     success_logger.setLevel(logging.INFO)
+    success_logger.handlers.clear()   # clear old handlers
 
     success_handler = TimedRotatingFileHandler(
         log_dir / LOGGING_CONFIG["success_logfile"],
@@ -27,6 +28,7 @@ def setup_loggers():
     # Error logger
     fail_logger = logging.getLogger("fail_logger")
     fail_logger.setLevel(logging.ERROR)
+    fail_logger.handlers.clear()   # clear old handlers
 
     fail_handler = TimedRotatingFileHandler(
         log_dir / LOGGING_CONFIG["fail_logfile"],
