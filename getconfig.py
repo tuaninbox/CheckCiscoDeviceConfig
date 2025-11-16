@@ -96,32 +96,16 @@ def main(ctx,find, list, device, writefile, command, commandfile, interactive):
                     filterlist=filterlist,
                     outfolder=writefile)
                 
-                for r in results:
-                    print(r)
-                    
-
-
-                
-# ##### GOOD - Run Command list on all devices - Write to file                    
-#         elif not device and commandfile: # run command list for all sites
-#             if writefile: #write to file
-#                 results=run_parallel(
-#                     reader, 
-#                     cmd, 
-#                     username, 
-#                     password, 
-#                     run_func= lambda retriever: retriever.get_config_to_file(),
-#                     success_logger=success_logger,
-#                     fail_logger=fail_logger,
-#                     debug=1,
-#                     outfolder=writefile)
-#             # for r in results:
-#             #     print(r)
-                
+                # for r in results:
+                #     print(r)
+                                
 
 ##### GOOD - Run command on all devices - Save to file #####
         else:# not args.site and not args.find: run command from all sites
             if writefile: #write to file
+                from config.logging_config import LOGGING_CONFIG
+                LOGGING_CONFIG["console"] = True
+                success_logger, fail_logger = setup_loggers()
                 results=run_parallel(
                     reader, 
                     cmd, 
@@ -132,8 +116,8 @@ def main(ctx,find, list, device, writefile, command, commandfile, interactive):
                     fail_logger=fail_logger,
                     debug=1,
                     outfolder=writefile)
-            for r in results:
-                print(r)
+            # for r in results:
+            #     print(r)
         
 # Non-interactive                
     else: #non-interactive mode -c, write to stdout, without -w
@@ -159,17 +143,21 @@ def main(ctx,find, list, device, writefile, command, commandfile, interactive):
                     filterlist=filterlist
                     )
                 
-                for r in results:
-                    # Print json dict
-                    # print(r)
-                    # Print plain text output
-                    print_result(r)
+                # for r in results:
+                #     # Print json dict
+                #     # print(r)
+                #     # Print plain text output
+                #     print_result(r)
 ##### GOOD - Run Command on all devices #####
         else:# not args.site and not args.find: run command on all sites
             # results=run_parallel(reader, cmd, username, password, get_config, success_logger=success_logger, fail_logger=fail_logger, debug=1)
             # # print("get config from all sites")         
             # for r in results:
             #     print_result(r)
+            # Turn console logging ON
+            from config.logging_config import LOGGING_CONFIG
+            LOGGING_CONFIG["console"] = True
+            success_logger, fail_logger = setup_loggers()
             results = run_parallel(
                 reader,
                 cmd,
