@@ -1,9 +1,13 @@
 from git import Repo
 import datetime
 from pathlib import Path
+from core.logging_manager import setup_loggers
 
-backup_dir = Path("./backups")
-print(backup_dir)
+# Initialize loggers for this module
+success_logger, fail_logger = setup_loggers(logger_name="gitrepo")
+
+backup_dir = Path("/Users/th/code/backups")
+# print(backup_dir)
 def git_commit_and_push():
     # Initialize repo if needed
     if not (backup_dir / ".git").exists():
@@ -11,28 +15,48 @@ def git_commit_and_push():
         repo.config_writer().set_value("user", "name", "BackupBot").release()
         repo.config_writer().set_value("user", "email", "backup@example.com").release()
         # Add remote (only once)
-        repo.create_remote("origin", "git@github.com:YOUR_USERNAME/YOUR_REPO.git")
+        # repo.create_remote("origin", "git@github.com:YOUR_USERNAME/YOUR_REPO.git")
         repo.git.branch("-M", "main")
+        success_logger.info("Initialized new Git repository in backup directory")
     else:
         repo = Repo(backup_dir)
 
-    # Stage all changes
-    repo.git.add(A=True)
+    # Detect changes
+    changed_files = [item.a_path for item in repo.index.diff(None)]  # modified files
+    untracked_files = repo.untracked_files                           # new files
+    deleted_files = [item.a_path for item in repo.index.diff(None) if item.change_type == 'D']
+
+    files_to_commit = changed_files + untracked_files + deleted_files
+
+    if not files_to_commit:
+        print("No changes detected, nothing to commit.")
+        success_logger.warning("No changes detected, nothing to commit")
+        return
+
+    # Stage only changed files
+    repo.index.add(files_to_commit)
 
     # Commit with timestamp
     msg = f"Backup on {datetime.datetime.now().isoformat()}"
     try:
         repo.index.commit(msg)
         print("Committed:", msg)
+        print("Files committed:", files_to_commit)
+        success_logger.info(f"Committed backup: {msg} | Files: {files_to_commit}")
     except Exception as e:
-        print("Nothing to commit:", e)
+        print("Commit failed:", e)
+        fail_logger.error(f"Commit failed: {e}")
 
-    # Push to GitHub
-    try:
-        repo.git.push("origin", "main")
-        print("Pushed to GitHub")
-    except Exception as e:
-        print("Push failed:", e)
+    # # Push to GitHub (optional)
+    # try:
+    #     repo.git.push("origin", "main")
+    #     print("Pushed to GitHub")
+    #     success_logger.info("Pushed backup to GitHub successfully")
+    # except Exception as e:
+    #     print("Push failed:", e)
+    #     fail_logger.error(f"Push failed: {e}")
 
-# Usage after backup
-# git_commit_and_push()
+
+if __name__ == "__main__":
+    git_commit_and_push()
+    # pass

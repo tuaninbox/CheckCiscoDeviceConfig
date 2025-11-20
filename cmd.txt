@@ -1,2 +1,5 @@
+[ios]
 show version
+show boot
+[nxos]
 show ip int brief

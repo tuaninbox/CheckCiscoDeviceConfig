@@ -10,16 +10,15 @@ warnings.filterwarnings("ignore")
 
 import time, sys, datetime, csv, os
 
-import click
+import click, json
 from core.credentials import get_credentials
 from core.executor import run_parallel
 # from core.device import get_config, get_config_to_file
 from core.utility import format_msg, print_result
 from core.logging_manager import setup_loggers
+from core.device import startinteractivesession, load_commands
 
 
-
-# Main function with Click menu
 @click.command(
     context_settings=dict(help_option_names=['-h', '--help']),
     help="Get Configuration: Run commands on devices, search output, or save results.")
@@ -31,155 +30,111 @@ from core.logging_manager import setup_loggers
 @click.option('-cf', '--commandfile', type=str, help='File contains commands to run')
 @click.option('-i', '--interactive', is_flag=True, help='Interactive Session')
 @click.pass_context
-def main(ctx,find, list, device, writefile, command, commandfile, interactive):
-    # Call this once during initialization
-    success_logger, fail_logger = setup_loggers()
 
-    # If no options are provided, show help
+def main(ctx, find, list, device, writefile, command, commandfile, interactive):
+    success_logger, fail_logger = setup_loggers(logger_name="getconfig")
+
+    # Show help if no options
     if not any([find, list, device, writefile, command, commandfile]):
         click.echo(ctx.get_help())
         ctx.exit()
+        
+    # If only device list is provided, but no command/interactive/find, show usage
+    if list and not any([command, commandfile, interactive, find, device, writefile]):
+        click.echo("You must provide a command (-c or -cf), or use interactive mode (-i).")
+        click.echo(ctx.get_help())
+        ctx.exit()
 
-    # Some options are exclusive
+    # Exclusive options check
     exclusive = [command, commandfile, interactive]
     if sum(bool(x) for x in exclusive) > 1:
         raise click.UsageError("Only one of --command, --commandfile, or --interactive can be used.")
 
     username, password = get_credentials()
     try:
-        #Read devices file
-        csvfile=list
-        srcfile = open(csvfile,"rt")
+        srcfile = open(list, "rt")
         reader = csv.DictReader(srcfile)
-    except:
-        msg = str(datetime.datetime.now())+": "+str(sys.exc_info()[1])
-        print(msg)
+    except Exception as e:
+        print(f"{datetime.datetime.now()}: {e}")
         sys.exit(1)
 
-    #if args.command:
-    if command:
-        #cmd = str(args.command)
-        cmd = str(command)
-    else:
-        #with open(args.commandfile,'rt') as f:
-        with open(commandfile,'rt') as f:
-            cmd = f.readlines()
-       
-    #findstring = str(args.find)
-    findstring = str(find)
-    t1=time.perf_counter()
-    #if args.interactive: # interactive mode -i, can't use with -c
-    if interactive: # interactive mode -i, can't use with -c
-        for i in reader:
-            # if i["Name"] == str(args.site):
-            if i["Name"] == str(site):
-                startinteractivesession(i["Name"],i["Host"],username if i["Username"] == "" else i["Username"],
-                            password if i["Password"] == "" else i["Password"],)
-    elif writefile: #non-interactive mode -c, write to file -w <folder>
-        if device and not find: #run command on 1 site
-            filterlist=[]
-            filterlist=[device for r in reader if str(device) == r["Name"]]
-            if len(filterlist) == 0:
-                print(format_msg(f"{device} is not in inventory","YELLOW"))
-            else:
-                srcfile.seek(0)
-                reader = csv.DictReader(srcfile)
-                results=run_parallel(
-                    reader, 
-                    cmd, 
-                    username, 
-                    password, 
-                    run_func= lambda retriever: retriever.get_config_to_file(),
-                    success_logger=success_logger,
-                    fail_logger=fail_logger,
-                    debug=1,
-                    filterlist=filterlist,
-                    outfolder=writefile)
-                
-                # for r in results:
-                #     print(r)
-                                
 
-##### GOOD - Run command on all devices - Save to file #####
-        else:# not args.site and not args.find: run command from all sites
-            if writefile: #write to file
-                from config.logging_config import LOGGING_CONFIG
-                LOGGING_CONFIG["console"] = True
-                success_logger, fail_logger = setup_loggers()
-                results=run_parallel(
-                    reader, 
-                    cmd, 
-                    username, 
-                    password, 
-                    run_func= lambda retriever: retriever.get_config_to_file(),
-                    success_logger=success_logger,
-                    fail_logger=fail_logger,
-                    debug=1,
-                    outfolder=writefile)
-            # for r in results:
-            #     print(r)
-        
-# Non-interactive                
-    else: #non-interactive mode -c, write to stdout, without -w
-##### GOOD - Run Command on 1 device #####
-        # elif args.site and not args.find: # run command on 1 site
-        if device and not find: # run command on 1 site
-            filterlist=[]
-            filterlist=[device for r in reader if str(device) == r["Name"]]
-            if len(filterlist) == 0:
-                print(format_msg(f"{device} is not in inventory","YELLOW"))
-            else:
-                srcfile.seek(0)
-                reader = csv.DictReader(srcfile)
-                results = run_parallel(
-                    reader,
-                    cmd,
+    # Interactive mode - GOOD
+    if interactive:
+        for row in reader:
+            if row["Host"] == str(device):  # assuming 'site' == 'device'
+                startinteractivesession(
+                    row["Host"],
+                    row["IP"],
                     username,
-                    password,
-                    run_func=lambda retriever: retriever.get_config(),
-                    success_logger=success_logger,
-                    fail_logger=fail_logger,
-                    debug=1,
-                    filterlist=filterlist
-                    )
-                
-                # for r in results:
-                #     # Print json dict
-                #     # print(r)
-                #     # Print plain text output
-                #     print_result(r)
-##### GOOD - Run Command on all devices #####
-        else:# not args.site and not args.find: run command on all sites
-            # results=run_parallel(reader, cmd, username, password, get_config, success_logger=success_logger, fail_logger=fail_logger, debug=1)
-            # # print("get config from all sites")         
-            # for r in results:
-            #     print_result(r)
-            # Turn console logging ON
-            from config.logging_config import LOGGING_CONFIG
-            LOGGING_CONFIG["console"] = True
-            success_logger, fail_logger = setup_loggers()
-            results = run_parallel(
-                reader,
-                cmd,
-                username,
-                password,
-                run_func=lambda retriever: retriever.get_config(),
-                success_logger=success_logger,
-                fail_logger=fail_logger,
-                debug=1
+                    password
+                    # username if not row["Username"] else row["Username"],
+                    # password if not row["Password"] else row["Password"],
                 )
-            
-            for r in results:
-                # Print json dict
-                # print(r)
-                # Print plain text output
-                print_result(r)
+        srcfile.close()
+        return
     
-# Print Time Report
-    t2=time.perf_counter()
-    print(format_msg(f"Finished after {t2-t1}","GREEN"))
+    # Build command list
+    # cmds = command if command else open(commandfile, "rt").readlines()
+    if command:
+        cmds = [command]
+    elif commandfile:
+        cmds=load_commands(commandfile)
+    else:
+        raise click.UsageError("You must provide --command or --commandfile unless using --interactive.")
+
+    # print(cmds)
+    findstring = str(find) if find else None
+
+    t1 = time.perf_counter()
+
+    # Non-interactive mode
+    # Build filterlist if device specified
+    filterlist = []
+
+    # reinitialize reader
+    srcfile.seek(0)              
+    reader = csv.DictReader(srcfile)  
+    if device and not find:
+        filterlist = [device for r in reader if str(device) == r["Host"]]
+        if not filterlist:
+            print(format_msg(f"{device} is not in inventory", "YELLOW"))
+            srcfile.close()
+            return
+        # Reset reader for run_parallel
+        srcfile.seek(0)
+        reader = csv.DictReader(srcfile)
+
+    # Choose run_func based on writefile
+    run_func = (lambda retriever: retriever.get_config_to_file()) if writefile else (lambda retriever: retriever.get_config())
+
+    results = run_parallel(
+        reader,
+        cmds,
+        username,
+        password,
+        run_func=run_func,
+        success_logger=success_logger,
+        fail_logger=fail_logger,
+        debug=1,
+        filterlist=filterlist if filterlist else None,
+        outfolder=writefile if writefile else None,
+    )
+    # print(results)
+    # Print results only if not writing to file
+    if not writefile:
+        for r in results:
+            print_result(r)
+
+    # Time report
+    t2 = time.perf_counter()
+    print(format_msg(f"Finished after {t2 - t1}", "GREEN"))
     srcfile.close()
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
+    # commandfile = "cmd.txt"
+    # commands_json = load_commands(commandfile)
+    # print(json.dumps(commands_json, indent=2))
+    # for c in commands_json["ios"]:
+    #     print(c)

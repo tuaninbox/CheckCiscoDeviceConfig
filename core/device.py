@@ -1,8 +1,10 @@
 import os
-import sys
+import sys, re
 import traceback
 from napalm import get_network_driver
-from core.utility import remove_password, format_msg
+import subprocess, shutil
+import configparser
+from core.utility import format_msg
 
 class DeviceDataRetriever:
     def __init__(self, hostname, host, user, password, cmdlist, success_logger=None, fail_logger=None, debug=0, outfolder="output"):
@@ -23,43 +25,50 @@ class DeviceDataRetriever:
             "error": None
         }
 
-    def _run_session(self, optional_args=None):
+    def _run_session(self, optional_args=None, removepassword: int = 0):
         driver = get_network_driver('ios')
         device = driver(self.host, self.user, self.password, optional_args=optional_args or {})
         device.open()
 
+        sanitizer = ConfigSanitizer()   # instantiate once
+        # print(self.cmdlist)
         commands = self.cmdlist if isinstance(self.cmdlist, list) else [self.cmdlist]
+        # print(commands)
         output_lines = []
         for cmd in commands:
             r = device.cli([cmd])
-            output_lines.append(f"{self.hostname}# {cmd}\n{remove_password(r[cmd])}")
+
+            raw_output = r[cmd]
+            sanitized_output = sanitizer.apply(raw_output, removepassword)
+            output_lines.append(f"{self.hostname}# {cmd}\n{sanitized_output}")
+            # output_lines.append(f"{self.hostname}# {cmd}\n{remove_password(r[cmd])}")
 
         device.close()
         self.result["success"] = True
         self.result["output"] = "\n".join(output_lines)
         if self.success_logger:
-            self.success_logger.info(f"{self.hostname} - {self.host} → Configuration retrieved successfully")
+            self.success_logger.info(f"{self.hostname} - {self.host} - Configuration retrieved successfully")
         return self.result
 
     def get_config(self):
         try:
-            return self._run_session()
-        except:
-            try:
-                return self._run_session(optional_args={"transport": "telnet"})
-            except Exception as e:
-                tb = traceback.extract_tb(sys.exc_info()[2])[0]
-                self.result["success"]= False
-                self.result["error"] = {
-                    "message": str(e),
-                    "filename": tb.filename,
-                    "line": tb.lineno,
-                    "code": tb.line
-                }
-                fail_msg = f"{e} at {tb.filename}:{tb.lineno} → {tb.line}" if self.debug else e
-                if self.fail_logger:
-                    self.fail_logger.error(f"{self.hostname} - {self.host} → {fail_msg}")
-                return self.result
+            return self._run_session(removepassword=1|2|4|8)
+        # except:
+        #     try:
+        #         return self._run_session(optional_args={"transport": "telnet"})
+        except Exception as e:
+            tb = traceback.extract_tb(sys.exc_info()[2])[0]
+            self.result["success"]= False
+            self.result["error"] = {
+                "message": str(e),
+                "filename": tb.filename,
+                "line": tb.lineno,
+                "code": tb.line
+            }
+            fail_msg = f"{e} at {tb.filename}:{tb.lineno} - {tb.line}" if self.debug else e
+            if self.fail_logger:
+                self.fail_logger.error(f"{self.hostname} - {self.host} - {fail_msg}")
+            return self.result
 
     def get_config_to_file(self):
         try:
@@ -75,10 +84,134 @@ class DeviceDataRetriever:
                 return format_msg(f"Configuration of {self.hostname} - {self.host} saved in {outfile}","BLUE")
             else:
                 # result["message"]=f"Can't get command output from devices {self.hostname} - {self.host}"
-                fail_msg= f"{output['error']['message']} at {output['error']['filename']}: {output['error']['line']} → {output['error']['code']}" if self.debug else f"{output['error']['message']}"
-                return format_msg(f"{self.hostname} - {self.host} → {fail_msg}","RED")
+                fail_msg= f"{output['error']['message']} at {output['error']['filename']}: {output['error']['line']} - {output['error']['code']}" if self.debug else f"{output['error']['message']}"
+                return format_msg(f"{self.hostname} - {self.host} - {fail_msg}","RED")
                 # return format_msg(f"Can't get command output from devices {self.hostname} - {self.host}","RED")
         except:
             # result["message"]=f"Write configuration to file error {sys.exc_info()[1]} for site {self.hostname} - {self.host}"
             return format_msg(f"Write configuration to file error {sys.exc_info()[1]} for site {self.hostname} - {self.host}","RED")
         
+class ConfigSanitizer:
+    def __init__(self):
+        # Map bitmask values to methods
+        self.removers = {
+            1: self.remove_userpass,
+            2: self.remove_snmp,
+            4: self.remove_tacacs,
+            8: self.remove_routing,
+        }
+
+    def remove_userpass(self, configuration: str) -> str:
+        # Example: strip generic username configs
+        ret=re.sub(r'enable (secret|password) (\d)?.*','enable \g<1> \g<2> <removed>',configuration)
+        ret=re.sub(r'(username\s+\S+\s+privilege\s+(?:[0-9]|1[0-5])\s+secret\s+[1-9])\s+\S+','\g<1> <removed>',ret)
+        return ret
+
+    def remove_snmp(self, configuration: str) -> str:
+        ret = re.sub(r'snmp-server community \b\w*',
+                     'snmp-server community <removed>', configuration)
+        ret = re.sub(r'snmp-server host ([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}) version (\w{1,2}) .*',
+                     r'snmp-server host \1 version \2 <removed>', ret)
+        return ret
+
+    def remove_tacacs(self, configuration: str) -> str:
+        ret = re.sub(r'(\skey\s)\b.*', r'\1<removed>', configuration)
+        ret = re.sub(r'(\spassword\s[57]\s)\b.*', r'\1<removed>', ret)
+        return ret
+
+    def remove_routing(self, configuration: str) -> str:
+        ret = re.sub(r'enable (secret|password) (\d)?.*',
+                     r'enable \1 \2 <removed>', configuration)
+        ret = re.sub(r'(\slog trap\s)[^\s.]*', r'\1<removed>', ret)
+        return ret
+
+    def apply(self, configuration: str, mask: int) -> str:
+        """Apply all removers based on the mask bit flags."""
+        for bit, func in self.removers.items():
+            if mask & bit:
+                configuration = func(configuration)
+        return configuration
+
+def startinteractivesession(name, host, user, password):
+    try:
+        print(f"Connecting to {name}...")
+        # Check if sshpass is installed
+        if shutil.which("sshpass"):
+            # Use sshpass to provide password automatically
+            subprocess.run([
+                "sshpass", "-p", password,
+                "ssh", f"{user}@{host}"
+            ])
+        else:
+            # Fallback: run ssh normally (will prompt for password)
+            print("sshpass not found, falling back to manual password entry...")
+            subprocess.run(["ssh", f"{user}@{host}"])
+    except Exception as e:
+        print(f"Error starting SSH: {e}")
+
+
+def load_commands(commandfile: str) -> dict[str, list[str]]:
+    parser = configparser.ConfigParser(allow_no_value=True)
+    parser.optionxform = str  # preserve case
+
+    parser.read(commandfile)
+
+    commands_by_os: dict[str, list[str]] = {}
+
+    for section in parser.sections():
+        # Each line in the section is treated as a key (command)
+        commands = list(parser[section].keys())
+        commands_by_os[section] = commands
+
+    return commands_by_os
+
+
+
+# def startinteractivesession(hostname, host, user, password):
+#     device = {
+#         "device_type": "cisco_ios",  # IOS/IOS-XE
+#         "host": host,
+#         "username": user,
+#         "password": password,
+#     }
+
+#     try:
+#         # Establish SSH connection
+#         connection = ConnectHandler(**device)
+#         print(f"Connected to {hostname} ({host})")
+
+#         # Hand control to interactive shell
+#         connection.interactive()  # drops you into the router CLI
+
+#         connection.disconnect()
+#     except Exception as e:
+#         print(f"Error connecting to {hostname} ({host}): {e}")
+
+# def startinteractivesession(hostname, host, user, password):
+#     def run_session(device):
+#         try:
+#             device.open()
+#             while True:
+#                 cmd = input("Command (q/quit to exit): ").strip()
+#                 if cmd in ("quit", "q"):
+#                     break
+#                 try:
+#                     result = device.cli(commands=[cmd])
+#                     print(result.get(cmd, "No output"))
+#                 except Exception as e:
+#                     print(f"Error running command '{cmd}': {e}")
+#         finally:
+#             device.close()
+
+#     driver = get_network_driver("ios")
+
+#     # Try SSH first, then Telnet
+#     try:
+#         device = driver(host, user or "", password or "")
+#         run_session(device)
+#     except Exception:
+#         try:
+#             device = driver(host, user or "", password or "", optional_args={"transport": "telnet"})
+#             run_session(device)
+#         except Exception as e:
+#             return f"Error: {e} {hostname} - {host}"

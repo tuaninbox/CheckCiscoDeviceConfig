@@ -25,25 +25,14 @@ def print_result(result, colorize=True,debug=0):
         print(result["output"])
     else:
         err = result["error"]
-        msg = f"{result['hostname']} - {result['host']} → {err['message']} at {err['filename']}: {err['line']} → {err['code']}" if debug else f"{result['hostname']} - {result['host']} → f{err['message']}"
+        msg = f"{result['hostname']} - {result['host']} - {err['message']} at {err['filename']}: {err['line']} - {err['code']}" if debug else f"{result['hostname']} - {result['host']} - {err['message']}"
         print(format_msg(msg, "RED") if colorize else msg)
-
-def remove_password(configuration):
-    ret=re.sub(r'snmp-server community \b\w*','snmp-server community <removed>',configuration)
-    ret=re.sub(r'snmp-server host ([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}) version (\w{1,2}) .*','snmp-server host \g<1> version \g<2> <removed>',ret)
-    ret=re.sub(r'enable (secret|password) (\d)?.*','enable \g<1> \g<2> <removed>',ret)
-    ret=re.sub(r'(\skey\s)\b.*','\g<1><removed>',ret)
-    ret=re.sub(r'(\spassword\s[57]\s)\b.*','\g<1><removed>',ret)
-    ret=re.sub(r'(\slog trap\s)[^\s.]*','\g<1><removed>',ret)
-    return ret
-
-
 
 
 # #function write log to file
 # def write_fail_log_to_file(msg, hostname):
 #     try:
-#         logging.info(f"{hostname} → {msg}")
+#         logging.info(f"{hostname} - {msg}")
 #     except Exception as e:
 #         print(f"Logging error: {e}")
 
