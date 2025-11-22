@@ -1,0 +1,7 @@
+[ios]
+show run
+show run all
+show inventory
+[nxos]
+show run
+show run all

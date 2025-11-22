@@ -6,14 +6,14 @@ from core.logging_manager import setup_loggers
 # Initialize loggers for this module
 success_logger, fail_logger = setup_loggers(logger_name="gitrepo")
 
-backup_dir = Path("/Users/th/code/backups")
+backup_dir = Path("/Users/hat/code/backups")
 # print(backup_dir)
-def git_commit_and_push():
+def git_commit_and_push(backup_dir):
     # Initialize repo if needed
     if not (backup_dir / ".git").exists():
         repo = Repo.init(backup_dir)
-        repo.config_writer().set_value("user", "name", "BackupBot").release()
-        repo.config_writer().set_value("user", "email", "backup@example.com").release()
+        repo.config_writer().set_value("user", "name", "username").release()
+        repo.config_writer().set_value("user", "email", "email@domain.com").release()
         # Add remote (only once)
         # repo.create_remote("origin", "git@github.com:YOUR_USERNAME/YOUR_REPO.git")
         repo.git.branch("-M", "main")

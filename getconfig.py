@@ -17,6 +17,8 @@ from core.executor import run_parallel
 from core.utility import format_msg, print_result
 from core.logging_manager import setup_loggers
 from core.device import startinteractivesession, load_commands
+from core.gitrepo import git_commit_and_push
+from pathlib import Path
 
 
 @click.command(
@@ -130,6 +132,10 @@ def main(ctx, find, list, device, writefile, command, commandfile, interactive):
     t2 = time.perf_counter()
     print(format_msg(f"Finished after {t2 - t1}", "GREEN"))
     srcfile.close()
+
+    # Git commit and push
+    full_path=Path(writefile)
+    git_commit_and_push(full_path)
 
 if __name__ == '__main__':
     main()

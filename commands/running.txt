@@ -1,0 +1,8 @@
+[ios]
+show ip route
+show ip int brief
+show arp
+[nxos]
+show ip route
+show ip int brief
+show arp
