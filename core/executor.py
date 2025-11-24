@@ -23,6 +23,7 @@ def run_parallel(reader, cmd, username, password, run_func, filterlist=None, **e
                     DeviceDataRetriever(
                         hostname=row["Host"],
                         host=row["IP"],
+                        os=row["OS"],
                         user=username,
                         password=password,
                         cmdlist=device_cmds,

@@ -7,9 +7,10 @@ import configparser
 from core.utility import format_msg
 
 class DeviceDataRetriever:
-    def __init__(self, hostname, host, user, password, cmdlist, success_logger=None, fail_logger=None, debug=0, outfolder="output"):
+    def __init__(self, hostname, host, os, user, password, cmdlist, success_logger=None, fail_logger=None, debug=0, outfolder="output"):
         self.hostname = hostname
         self.host = host
+        self.os = os
         self.user = user
         self.password = password
         self.cmdlist = cmdlist
@@ -26,7 +27,10 @@ class DeviceDataRetriever:
         }
 
     def _run_session(self, optional_args=None, removepassword: int = 0):
-        driver = get_network_driver('ios')
+        driver="ios"
+        if self.os == "nxos":
+            driver = "nxos_ssh"
+        driver = get_network_driver(driver)
         device = driver(self.host, self.user, self.password, optional_args=optional_args or {})
         device.open()
 
@@ -70,13 +74,16 @@ class DeviceDataRetriever:
                 self.fail_logger.error(f"{self.hostname} - {self.host} - {fail_msg}")
             return self.result
 
-    def get_config_to_file(self):
+    def get_config_to_file(self, tolowercase=True):
         try:
             output = self.get_config()
             # print(type(output["success"]),output["success"])
             if output["success"]:
                 outfolder = self.outfolder
-                outfile = os.path.join(outfolder, f"{self.hostname}.txt")
+                if tolowercase:
+                    outfile = os.path.join(outfolder, f"{self.hostname.lower()}.txt")
+                else:
+                    outfile = os.path.join(outfolder, f"{self.hostname}.txt")
                 if not os.path.exists(outfolder):
                     os.makedirs(outfolder)
                 with open(outfile, "w") as fp:
@@ -98,13 +105,14 @@ class ConfigSanitizer:
             1: self.remove_userpass,
             2: self.remove_snmp,
             4: self.remove_tacacs,
-            8: self.remove_routing,
+            8: self.remove_app_hosting,
         }
 
     def remove_userpass(self, configuration: str) -> str:
         # Example: strip generic username configs
         ret=re.sub(r'enable (secret|password) (\d)?.*','enable \g<1> \g<2> <removed>',configuration)
         ret=re.sub(r'(username\s+\S+\s+privilege\s+(?:[0-9]|1[0-5])\s+secret\s+[1-9])\s+\S+','\g<1> <removed>',ret)
+        ret = re.sub(r'(username\s+\S+\s+password\s+\d+)\s+\S+','\g<1> <removed>',ret)
         return ret
 
     def remove_snmp(self, configuration: str) -> str:
@@ -112,17 +120,50 @@ class ConfigSanitizer:
                      'snmp-server community <removed>', configuration)
         ret = re.sub(r'snmp-server host ([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}) version (\w{1,2}) .*',
                      r'snmp-server host \1 version \2 <removed>', ret)
+        ret = re.sub(r'(snmp mib community-map)\s+\S+\s+(engineid \S+)',
+                     r'\1 <removed> \2', ret)
+        ret = re.sub(r'(snmp-server user\s+\S+\s+\S+\s+auth\s+(?:md5|sha))\s+\S+(\s+priv(?:\s+(?:des|3des|aes-\d+))?)\s+\S+(\s+localizedkey|\s+access\s+\S+)?',
+                lambda m: (f"{m.group(1)} <removed>"
+                + (f"{m.group(2)} <removed>" if m.group(2) else "")
+                + (m.group(3) if m.group(3) else "")),ret)
+        ret = re.sub(r'(snmp-server host\s+\S+\s+(?:trap|traps|informs)\s+version\s+(?:1|2c|3(?:\s+(?:auth|noauth|priv))?))\s+\S+(\s+.*)?',
+                     r'\1 <removed>\2',ret)
         return ret
 
     def remove_tacacs(self, configuration: str) -> str:
-        ret = re.sub(r'(\skey\s)\b.*', r'\1<removed>', configuration)
-        ret = re.sub(r'(\spassword\s[57]\s)\b.*', r'\1<removed>', ret)
+        # Mask tacacs server key lines (block form)
+        ret = re.sub(
+            r'(?m)^(?:(?!ssh).)*\bkey\s+\d+\s+\S+',
+            lambda m: re.sub(r'(\bkey\s+\d+)\s+\S+', r'\1 <removed>', m.group(0)),
+            configuration
+        )
+
+        # Mask tacacs-server keys lines (single-line form)
+        ret = re.sub(
+            r'(tacacs-server\s+keys\s+\d+)\s+\S+',
+            r'\1 <removed>',
+            ret
+        )
+
+        # Mask tacacs password lines
+        ret = re.sub(
+            r'(\spassword\s[57]\s)\S+',
+            r'\1<removed>',
+            ret
+        )
+
+        ret = re.sub(r'((?:tacacs-server|radius-server)(?:\s+host\s+\S+)?\s+\S+\s+username\s+\S+\s+password\s+)\S+',
+              r'\1<removed>',ret)
+
+        ret = re.sub(r'(\slog trap\s)[^\s.]*', r'\1<removed>', ret)
+
         return ret
 
-    def remove_routing(self, configuration: str) -> str:
-        ret = re.sub(r'enable (secret|password) (\d)?.*',
-                     r'enable \1 \2 <removed>', configuration)
-        ret = re.sub(r'(\slog trap\s)[^\s.]*', r'\1<removed>', ret)
+    def remove_app_hosting(self, configuration: str) -> str:
+        ret = re.sub(
+            r'(run-opt\s+(?:--env|-e)\s+TEAGENT_ACCOUNT_TOKEN=)\S+',
+            r'\1<removed>',configuration)
+        
         return ret
 
     def apply(self, configuration: str, mask: int) -> str:

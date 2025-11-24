@@ -31,9 +31,10 @@ from pathlib import Path
 @click.option('-c', '--command', type=str, help='Command to run')
 @click.option('-cf', '--commandfile', type=str, help='File contains commands to run')
 @click.option('-i', '--interactive', is_flag=True, help='Interactive Session')
+@click.option('-g', '--git', is_flag=True, help='Commit to Git')
 @click.pass_context
 
-def main(ctx, find, list, device, writefile, command, commandfile, interactive):
+def main(ctx, find, list, device, writefile, command, commandfile, interactive, git):
     success_logger, fail_logger = setup_loggers(logger_name="getconfig")
 
     # Show help if no options
@@ -133,9 +134,10 @@ def main(ctx, find, list, device, writefile, command, commandfile, interactive):
     print(format_msg(f"Finished after {t2 - t1}", "GREEN"))
     srcfile.close()
 
-    # Git commit and push
-    full_path=Path(writefile)
-    git_commit_and_push(full_path)
+    if git:
+        # Git commit and push
+        full_path=Path(writefile)
+        git_commit_and_push(full_path)
 
 if __name__ == '__main__':
     main()
