@@ -99,7 +99,7 @@ def main(ctx, find, list, device, writefile, command, commandfile, interactive, 
     srcfile.seek(0)              
     reader = csv.DictReader(srcfile)  
     if device and not find:
-        filterlist = [device for r in reader if str(device) == r["Host"]]
+        filterlist = [device.lower() for r in reader if str(device).lower() == r["Host"].lower()]
         if not filterlist:
             print(format_msg(f"{device} is not in inventory", "YELLOW"))
             srcfile.close()
@@ -122,6 +122,7 @@ def main(ctx, find, list, device, writefile, command, commandfile, interactive, 
         debug=1,
         filterlist=filterlist if filterlist else None,
         outfolder=writefile if writefile else None,
+        sanitizeconfig=True,
     )
     # print(results)
     # Print results only if not writing to file
@@ -136,13 +137,7 @@ def main(ctx, find, list, device, writefile, command, commandfile, interactive, 
 
     if git:
         # Git commit and push
-        full_path=Path(writefile)
-        git_commit_and_push(full_path)
+        git_commit_and_push()
 
 if __name__ == '__main__':
     main()
-    # commandfile = "cmd.txt"
-    # commands_json = load_commands(commandfile)
-    # print(json.dumps(commands_json, indent=2))
-    # for c in commands_json["ios"]:
-    #     print(c)

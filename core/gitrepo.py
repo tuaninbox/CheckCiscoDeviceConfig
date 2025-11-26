@@ -2,13 +2,21 @@ from git import Repo
 import datetime
 from pathlib import Path
 from core.logging_manager import setup_loggers
+import configparser
 
 # Initialize loggers for this module
 success_logger, fail_logger = setup_loggers(logger_name="gitrepo")
 
-backup_dir = Path("/Users/hat/code/backups")
-# print(backup_dir)
-def git_commit_and_push(backup_dir):
+try:
+    # Read backup_dir from gitrepo.ini
+    config = configparser.ConfigParser()
+    config.read("config/config.ini")
+    backup_dir = Path(config["gitrepo"]["backup_dir"]).expanduser()
+except KeyError:
+    fail_logger.error("Missing 'backup_dir' in config.ini under [gitrepo] section")
+    raise
+
+def git_commit_and_push():
     # Initialize repo if needed
     if not (backup_dir / ".git").exists():
         repo = Repo.init(backup_dir)
@@ -37,7 +45,7 @@ def git_commit_and_push(backup_dir):
     repo.index.add(files_to_commit)
 
     # Commit with timestamp
-    msg = f"Backup on {datetime.datetime.now().isoformat()}"
+    msg = f"Backup at {datetime.datetime.now().isoformat()}"
     try:
         repo.index.commit(msg)
         print("Committed:", msg)

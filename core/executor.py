@@ -2,7 +2,7 @@
 import concurrent.futures
 from .device import DeviceDataRetriever
 
-def run_parallel(reader, cmd, username, password, run_func, filterlist=None, **extra_kwargs):
+def run_parallel(reader, cmd, username, password, run_func, filterlist=None, sanitizeconfig=True, **extra_kwargs):
     rows = list(reader)  # materialize reader so we can iterate multiple times
     results = []
 
@@ -11,7 +11,7 @@ def run_parallel(reader, cmd, username, password, run_func, filterlist=None, **e
         for row in rows:
             if row["Host"].startswith("#"):
                 continue
-            if filterlist and row["Host"] not in filterlist:
+            if filterlist and row["Host"].lower() not in filterlist:
                 continue
 
             os_type = row.get("OS", "").strip().lower()
@@ -27,6 +27,7 @@ def run_parallel(reader, cmd, username, password, run_func, filterlist=None, **e
                         user=username,
                         password=password,
                         cmdlist=device_cmds,
+                        sanitizeconfig=sanitizeconfig,
                         **extra_kwargs
                     )
                 )

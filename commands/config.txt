@@ -1,7 +1,8 @@
 [ios]
-show run
-show run all
+show running-config
+show running-config all
 show inventory
 [nxos]
-show run
-show run all
+show running-config
+show runnning-config all
+show hardware
