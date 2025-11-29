@@ -2,19 +2,21 @@ from git import Repo
 import datetime
 from pathlib import Path
 from core.logging_manager import setup_loggers
-import configparser
+from config.config_loader import load_backup_config
 
 # Initialize loggers for this module
 success_logger, fail_logger = setup_loggers(logger_name="gitrepo")
 
-try:
-    # Read backup_dir from gitrepo.ini
-    config = configparser.ConfigParser()
-    config.read("config/config.ini")
-    backup_dir = Path(config["gitrepo"]["backup_dir"]).expanduser()
-except KeyError:
-    fail_logger.error("Missing 'backup_dir' in config.ini under [gitrepo] section")
-    raise
+backup_dir = load_backup_config()
+
+# try:
+#     # Read backup_dir from gitrepo.ini
+#     config = configparser.ConfigParser()
+#     config.read(config_file)
+#     backup_dir = Path(config["gitrepo"]["backup_dir"]).expanduser()
+# except KeyError:
+#     fail_logger.error(f"Missing 'backup_dir' in config.ini under [gitrepo] section or {config_file} does not exist")
+#     raise
 
 def git_commit_and_push():
     # Initialize repo if needed

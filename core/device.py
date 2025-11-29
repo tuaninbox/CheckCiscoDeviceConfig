@@ -86,7 +86,7 @@ def sanitize_configold(raw_output: str, os_name: str, command: str, config_file:
     return "\n".join(sanitized_lines)
 
 class DeviceDataRetriever:
-    def __init__(self, hostname, host, os, user, password, cmdlist, success_logger=None, fail_logger=None, debug=0, outfolder="output", sanitizeconfig=True):
+    def __init__(self, hostname, host, os, user, password, cmdlist, success_logger=None, fail_logger=None, debug=0, outfolder="output", sanitizeconfig=True, removepassword: int = 1|2|4|8):
         self.hostname = hostname
         self.host = host
         self.os = os
@@ -98,6 +98,7 @@ class DeviceDataRetriever:
         self.debug = debug
         self.outfolder = outfolder
         self.sanitizeconfig = sanitizeconfig
+        self.removepassword = removepassword
         self.result = {
             "hostname": hostname,
             "host": host,
@@ -106,18 +107,25 @@ class DeviceDataRetriever:
             "error": None
         }
 
-    def _run_session(self, optional_args=None, removepassword: int = 0):
+    def _run_session(self, removepassword: int = 0, optional_args=None):
         driver="ios"
         if self.os == "nxos":
             driver = "nxos_ssh"
+        elif self.os == "dellos10":
+            # optional_args = {'global_delay_factor': 3}
+            dirver = self.os
+            removepassword = 0
+            self.sanitizeconfig = False
+        else:
+            driver = self.os
         driver = get_network_driver(driver)
         device = driver(self.host, self.user, self.password, optional_args=optional_args or {})
         device.open()
 
         sanitizer = SecretSanitizer()   # instantiate once
-        # print(self.cmdlist)
+        
         commands = self.cmdlist if isinstance(self.cmdlist, list) else [self.cmdlist]
-        # print(commands)
+        
         output_lines = []
         for cmd in commands:
             r = device.cli([cmd])
@@ -139,7 +147,7 @@ class DeviceDataRetriever:
 
     def get_config(self):
         try:
-            return self._run_session(removepassword=1|2|4|8)
+            return self._run_session(self.removepassword)
         # except:
         #     try:
         #         return self._run_session(optional_args={"transport": "telnet"})
@@ -187,7 +195,7 @@ class SecretSanitizer:
         self.removers = {
             1: self.remove_userpass,
             2: self.remove_snmp,
-            4: self.remove_tacacs,
+            4: self.remove_key,
             8: self.remove_app_hosting,
         }
 
@@ -209,12 +217,11 @@ class SecretSanitizer:
                 lambda m: (f"{m.group(1)} <removed>"
                 + (f"{m.group(2)} <removed>" if m.group(2) else "")
                 + (m.group(3) if m.group(3) else "")),ret)
-        ret = re.sub(r'(snmp-server host\s+\S+\s+(?:trap|traps|informs)\s+version\s+(?:1|2c|3(?:\s+(?:auth|noauth|priv))?))\s+\S+(\s+.*)?',
-                     r'\1 <removed>\2',ret)
+        ret = re.sub(r'(snmp-server\s+host\s+\S+(?:\s+vrf\s+\S+)?(?:\s+(?:trap|traps|informs))?(?:\s+version\s+(?:1|2c|3(?:\s+(?:auth|noauth|priv))?))?)(?:\s+(?!use-vrf)\S+)',r'\1 <removed>',ret)
         ret = re.sub(r'(netconf-yang\s+cisco-ia\s+snmp-community-string\s+)\S+',r'\1<removed>',ret)
         return ret
 
-    def remove_tacacs(self, configuration: str) -> str:
+    def remove_key(self, configuration: str) -> str:
         # Mask tacacs server key lines (block form)
         ret = re.sub(
             r'(?m)^(?:(?!ssh).)*\bkey\s+\d+\s+\S+',
@@ -236,11 +243,26 @@ class SecretSanitizer:
             ret
         )
 
+        # Remove Tacacs or radius server key
         ret = re.sub(r'((?:tacacs-server|radius-server)(?:\s+host\s+\S+)?\s+\S+\s+username\s+\S+\s+password\s+)\S+',
               r'\1<removed>',ret)
 
+        # Remove Log Trap
         ret = re.sub(r'(\slog trap\s)[^\s.]*', r'\1<removed>', ret)
 
+        # Mask OSPF message-digest-key secrets
+        ret = re.sub(
+                    r'(ip\s+ospf\s+message-digest-key\s+\d+\s+\S+\s+\d+)\s+\S+',
+                    r'\1 <removed>',
+                    ret
+        )
+
+        # Mask client/server-key secrets
+        ret = re.sub(
+                    r'(server-key\s+\d+)\s+\S+',
+                    r'\1 <removed>',
+                    ret
+        )
         return ret
 
     def remove_app_hosting(self, configuration: str) -> str:

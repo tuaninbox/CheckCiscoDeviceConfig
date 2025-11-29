@@ -32,9 +32,10 @@ from pathlib import Path
 @click.option('-cf', '--commandfile', type=str, help='File contains commands to run')
 @click.option('-i', '--interactive', is_flag=True, help='Interactive Session')
 @click.option('-g', '--git', is_flag=True, help='Commit to Git')
+@click.option('-rp', '--removepasswords',type=int,default=15,help='Remove passwords from configuration output')
 @click.pass_context
 
-def main(ctx, find, list, device, writefile, command, commandfile, interactive, git):
+def main(ctx, find, list, device, writefile, command, commandfile, interactive, git, removepasswords):
     success_logger, fail_logger = setup_loggers(logger_name="getconfig")
 
     # Show help if no options
@@ -123,6 +124,7 @@ def main(ctx, find, list, device, writefile, command, commandfile, interactive, 
         filterlist=filterlist if filterlist else None,
         outfolder=writefile if writefile else None,
         sanitizeconfig=True,
+        removepassword=removepasswords,
     )
     # print(results)
     # Print results only if not writing to file
