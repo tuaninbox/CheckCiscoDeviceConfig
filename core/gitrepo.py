@@ -18,7 +18,7 @@ backup_dir = load_backup_config()
 #     fail_logger.error(f"Missing 'backup_dir' in config.ini under [gitrepo] section or {config_file} does not exist")
 #     raise
 
-def git_commit_and_push():
+def git_commit_and_push(push=True):
     # Initialize repo if needed
     if not (backup_dir / ".git").exists():
         repo = Repo.init(backup_dir)
@@ -57,14 +57,15 @@ def git_commit_and_push():
         print("Commit failed:", e)
         fail_logger.error(f"Commit failed: {e}")
 
-    # # Push to GitHub (optional)
-    # try:
-    #     repo.git.push("origin", "main")
-    #     print("Pushed to GitHub")
-    #     success_logger.info("Pushed backup to GitHub successfully")
-    # except Exception as e:
-    #     print("Push failed:", e)
-    #     fail_logger.error(f"Push failed: {e}")
+    if push:
+        # Push to GitHub (optional)
+        try:
+            repo.git.push("origin", "main")
+            print("Pushed to GitHub")
+            success_logger.info("Pushed backup to GitHub successfully")
+        except Exception as e:
+            print("Push failed:", e)
+            fail_logger.error(f"Push failed: {e}")
 
 
 if __name__ == "__main__":

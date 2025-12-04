@@ -62,7 +62,7 @@ def get_nagios_api():
     # 3. Prompt user if still missing
     if not nagios_host:
         nagios_host = input("Enter Nagios Host: ")
-    if not password:
+    if not nagios_apikey:
         nagios_apikey = getpass.getpass("Enter Nagios APIKey: ")
 
     return nagios_host, nagios_apikey

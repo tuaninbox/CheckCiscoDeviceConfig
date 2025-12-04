@@ -32,10 +32,11 @@ from pathlib import Path
 @click.option('-cf', '--commandfile', type=str, help='File contains commands to run')
 @click.option('-i', '--interactive', is_flag=True, help='Interactive Session')
 @click.option('-g', '--git', is_flag=True, help='Commit to Git')
+@click.option('-gco', '--gitcommitonly', is_flag=True, help='Commit only (no push)')
 @click.option('-rp', '--removepasswords',type=int,default=15,help='Remove passwords from configuration output')
 @click.pass_context
 
-def main(ctx, find, list, device, writefile, command, commandfile, interactive, git, removepasswords):
+def main(ctx, find, list, device, writefile, command, commandfile, interactive, git, gitcommitonly, removepasswords):
     success_logger, fail_logger = setup_loggers(logger_name="getconfig")
 
     # Show help if no options
@@ -53,6 +54,10 @@ def main(ctx, find, list, device, writefile, command, commandfile, interactive, 
     exclusive = [command, commandfile, interactive]
     if sum(bool(x) for x in exclusive) > 1:
         raise click.UsageError("Only one of --command, --commandfile, or --interactive can be used.")
+
+    # Exclusive Git options check
+    if git and gitcommitonly:
+        raise click.UsageError("Only one of --git or --gitcommitonly can be used.")
 
     username, password = get_credentials()
     try:
@@ -137,9 +142,11 @@ def main(ctx, find, list, device, writefile, command, commandfile, interactive, 
     print(format_msg(f"Finished after {t2 - t1}", "GREEN"))
     srcfile.close()
 
+    # Git actions
     if git:
-        # Git commit and push
-        git_commit_and_push()
+        git_commit_and_push()  # commit + push
+    elif gitcommitonly:
+        git_commit_and_push(push=False)  # commit only
 
 if __name__ == '__main__':
     main()
