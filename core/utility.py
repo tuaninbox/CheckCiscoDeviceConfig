@@ -19,6 +19,7 @@ def format_msg(msg,color=""):
         return f"{getattr(bcolors,color)}{msg}{bcolors.ENDC}"
     
 def print_result(result, colorize=True,debug=0):
+    # print(result)
     if result["success"]:
         header = format_msg(f"{result['hostname']} - {result['host']}", "CYAN") if colorize else f"{result['hostname']} - {result['host']}"
         print(header)

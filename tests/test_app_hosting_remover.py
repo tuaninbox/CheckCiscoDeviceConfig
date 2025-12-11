@@ -1,20 +1,20 @@
 import pytest
-from core.device import ConfigSanitizer
+from core.device import SecretSanitizer
 
 def test_remove_token_with_env():
-    sanitizer = ConfigSanitizer()
+    sanitizer = SecretSanitizer()
     config = "run-opt --env TEAGENT_ACCOUNT_TOKEN=abcd1234"
     expected = "run-opt --env TEAGENT_ACCOUNT_TOKEN=<removed>"
     assert sanitizer.remove_app_hosting(config) == expected
 
 def test_remove_token_with_short_e():
-    sanitizer = ConfigSanitizer()
+    sanitizer = SecretSanitizer()
     config = "run-opt -e TEAGENT_ACCOUNT_TOKEN=xyz987"
     expected = "run-opt -e TEAGENT_ACCOUNT_TOKEN=<removed>"
     assert sanitizer.remove_app_hosting(config) == expected
 
 def test_multiple_lines():
-    sanitizer = ConfigSanitizer()
+    sanitizer = SecretSanitizer()
     config = """app-hosting run-opts appid thousandeyes
   run-opt --env TEAGENT_ACCOUNT_TOKEN=abcd1234
   run-opt -e TEAGENT_ACCOUNT_TOKEN=xyz987"""
@@ -29,5 +29,5 @@ def test_multiple_lines():
     ("run-opt -e TEAGENT_ACCOUNT_TOKEN=mySecret", "run-opt -e TEAGENT_ACCOUNT_TOKEN=<removed>")
 ])
 def test_parametrized(input_line, expected_line):
-    sanitizer = ConfigSanitizer()
+    sanitizer = SecretSanitizer()
     assert sanitizer.remove_app_hosting(input_line) == expected_line

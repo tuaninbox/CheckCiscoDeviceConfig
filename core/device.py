@@ -1,10 +1,13 @@
 import os
 import sys, re
 import traceback
-from napalm import get_network_driver
+#from napalm import get_network_driver
+from netmiko import ConnectHandler
 import subprocess, shutil
 import configparser
 from core.utility import format_msg
+from genie.libs.parser.utils import get_parser
+
 
 import configparser
 from pathlib import Path
@@ -58,33 +61,6 @@ def sanitize_config(raw_output: str, os_name: str, command: str, config_file: st
     return "\n".join(sanitized_lines).strip()+ "\n"
 
 
-def sanitize_configold(raw_output: str, os_name: str, command: str, config_file: str = "commandfilters.ini") -> str:
-    """
-    Sanitize CLI output based on OS and command rules using regex filters.
-    """
-    cfg = configparser.ConfigParser()
-    cfg.read(config_file)
-
-    section = f"{os_name}:{command}"
-    regex_patterns = []
-
-    if cfg.has_section(section):
-        regex_patterns = [
-            re.compile(p.strip(), re.IGNORECASE)
-            for p in cfg.get(section, "exclude_regex", fallback="").split(",")
-            if p.strip()
-        ]
-
-    sanitized_lines = []
-    for line in raw_output.splitlines():
-        stripped = line.strip()
-        # Skip if any regex matches
-        if any(pattern.search(stripped) for pattern in regex_patterns):
-            continue
-        sanitized_lines.append(line)
-
-    return "\n".join(sanitized_lines)
-
 class DeviceDataRetriever:
     def __init__(self, hostname, host, os, user, password, cmdlist, success_logger=None, fail_logger=None, debug=0, outfolder="output", sanitizeconfig=True, removepassword: int = 1|2|4|8):
         self.hostname = hostname
@@ -107,42 +83,64 @@ class DeviceDataRetriever:
             "error": None
         }
 
-    def _run_session(self, removepassword: int = 0, optional_args=None):
-        driver="ios"
-        if self.os == "nxos":
-            driver = "nxos_ssh"
-        elif self.os == "dellos10":
-            # optional_args = {'global_delay_factor': 3}
-            dirver = self.os
-            removepassword = 0
-            self.sanitizeconfig = False
-        else:
-            driver = self.os
-        driver = get_network_driver(driver)
-        device = driver(self.host, self.user, self.password, optional_args=optional_args or {})
-        device.open()
+    def _run_session(self, removepassword: int = 0, use_parser_genie=False, optional_args=None):
+        # Map OS string to Netmiko device_type
+        device_type_map = {
+            "ios": "cisco_ios",
+            "iosxe": "cisco_iosxe",
+            "nxos": "cisco_nxos",
+            "aironet": "cisco_wlc",
+            "dellos10": "dell_os10",
+            "f5": "f5_tmsh",  # or "f5_ltm" depending on CLI
+        }
+        device_type = device_type_map.get(self.os)
+        if not device_type:
+            self.result["error"] = f"Unsupported OS type: {self.os}"
+            if self.fail_logger:
+                self.fail_logger.error(self.result["error"])
+            return self.result
 
-        sanitizer = SecretSanitizer()   # instantiate once
-        
-        commands = self.cmdlist if isinstance(self.cmdlist, list) else [self.cmdlist]
-        
-        output_lines = []
-        for cmd in commands:
-            r = device.cli([cmd])
-            raw_output = r[cmd]
-            if self.sanitizeconfig:
-                clean_config = sanitize_config(raw_output,self.os,cmd)
-            else:
-                clean_config = raw_output
-            sanitized_output = sanitizer.apply(clean_config, removepassword)
-            output_lines.append(f"{self.hostname}# {cmd}\n{sanitized_output}")
-            # output_lines.append(f"{self.hostname}# {cmd}\n{remove_password(r[cmd])}")
+        conn_params = {
+            "device_type": device_type,
+            "ip": self.host,
+            "username": self.user,
+            "password": self.password,
+        }
+        if optional_args:
+            conn_params.update(optional_args)
 
-        device.close()
-        self.result["success"] = True
-        self.result["output"] = "\n".join(output_lines)
-        if self.success_logger:
-            self.success_logger.info(f"{self.hostname} - {self.host} - Configuration retrieved successfully")
+        # try:
+        with ConnectHandler(**conn_params) as conn:
+            sanitizer = SecretSanitizer()
+
+            commands = self.cmdlist if isinstance(self.cmdlist, list) else [self.cmdlist]
+            output_lines = []
+
+            for cmd in commands:
+                if use_parser_genie:
+                    raw_output = conn.send_command(cmd, use_genie=True)
+                else:
+                    raw_output = conn.send_command(cmd)
+                if self.sanitizeconfig:
+                    clean_config = sanitize_config(raw_output, self.os, cmd)
+                else:
+                    clean_config = raw_output
+                sanitized_output = sanitizer.apply(clean_config, removepassword)
+                print(sanitized_output)
+                if use_parser_genie:
+                    output_lines[f"{cmd}"]=sanitized_output
+                    # print(output_lines)
+                else:
+                    output_lines.append(f"{self.hostname}# {cmd}\n{sanitized_output}")
+
+            self.result["success"] = True
+            self.result["output"] = output_lines
+
+            if self.success_logger:
+                self.success_logger.info(
+                    f"{self.hostname} - {self.host} - Configuration retrieved successfully"
+                )
+
         return self.result
 
     def get_config(self):
@@ -189,6 +187,90 @@ class DeviceDataRetriever:
             # result["message"]=f"Write configuration to file error {sys.exc_info()[1]} for site {self.hostname} - {self.host}"
             return format_msg(f"Write configuration to file error {sys.exc_info()[1]} for site {self.hostname} - {self.host}","RED")
         
+    def get_host_info(self):
+        try:
+            """
+            Gather host information (version, uptime, serial, model).
+            Uses _run_session for execution, Genie for parsing Cisco outputs.
+            """
+            os_cmds = {
+                "ios": ["show version"],
+                "iosxe": ["show version"],
+                "nxos": ["show version"],
+                "aironet": ["show sysinfo"],
+                "dellos10": ["show version"],
+                "f5": ["show sys version"],
+            }
+
+            commands = os_cmds.get(self.os.lower())
+            if not commands:
+                raise ValueError(f"Unsupported OS type: {self.os}")
+
+            # Save current cmdlist and override
+            original_cmdlist = self.cmdlist
+            self.cmdlist = commands
+
+            # Run session (reuses connection + sanitization)
+            result = self._run_session(use_parser_genie=True)
+            # Restore original cmdlist
+            self.cmdlist = original_cmdlist
+
+            host_info = {
+                "hostname": self.hostname,
+                "ip": self.host,
+                "os": self.os,
+                "version": None,
+                "uptime": None,
+                "serial": None,
+                "model": None,
+            }
+
+            if result["success"]:
+                output = result["output"]
+                print(output)
+                # Use Genie for Cisco platforms
+                if self.os.lower() in ["ios", "iosxe", "nxos"]:
+                    try:
+                        # parser = get_parser("show version", self.os.lower())
+                        # parsed = parser(output)
+                        parser_cls = get_parser("show version", self.os.lower())
+                        parser = parser_cls(device=None)
+                        parsed = parser.parse(output)
+                        print(parsed)
+                        host_info["version"] = parsed.get("version")
+                        host_info["uptime"] = parsed.get("uptime")
+                        host_info["serial"] = parsed.get("processor_board_id")
+                        host_info["model"] = parsed.get("chassis")
+                    except Exception as e:
+                        # fallback if Genie parser fails
+                        print(f"Genie parsed failed {e}")
+                        host_info["version"] = self._fallback_parse_version(output)
+                else:
+                    # Non-Cisco fallback
+                    host_info["version"] = self._fallback_parse_version(output)
+                result['output']=host_info
+        except Exception as e:
+            tb = traceback.extract_tb(sys.exc_info()[2])[0]
+            self.result["success"]= False
+            self.result["error"] = {
+                "message": str(e),
+                "filename": tb.filename,
+                "line": tb.lineno,
+                "code": tb.line
+            }
+            fail_msg = f"{e} at {tb.filename}:{tb.lineno} - {tb.line}" if self.debug else e
+            if self.fail_logger:
+                self.fail_logger.error(f"{self.hostname} - {self.host} - {fail_msg}")
+            return self.result
+        return host_info
+
+    # --- fallback parser for non-Cisco ---
+    def _fallback_parse_version(self, output: str) -> str:
+        for line in output.splitlines():
+            if "Version" in line or "Software" in line:
+                return line.strip()
+        return None
+    
 class SecretSanitizer:
     def __init__(self):
         # Map bitmask values to methods
@@ -219,6 +301,15 @@ class SecretSanitizer:
                 + (m.group(3) if m.group(3) else "")),ret)
         ret = re.sub(r'(snmp-server\s+host\s+\S+(?:\s+vrf\s+\S+)?(?:\s+(?:trap|traps|informs))?(?:\s+version\s+(?:1|2c|3(?:\s+(?:auth|noauth|priv))?))?)(?:\s+(?!use-vrf)\S+)',r'\1 <removed>',ret)
         ret = re.sub(r'(netconf-yang\s+cisco-ia\s+snmp-community-string\s+)\S+',r'\1<removed>',ret)
+        ret = re.sub(
+            r'(snmp community (?:create|accessmode ro)|snmp trapreceiver (?:mode enable|create))'
+            r'\s+(\S+)(?:\s+([0-9]{1,3}(?:\.[0-9]{1,3}){3}))?',
+            lambda m: (
+                f"{m.group(1)} <removed>"
+                + (f" {m.group(3)}" if m.group(3) else "")
+            ),
+            ret
+        )
         return ret
 
     def remove_key(self, configuration: str) -> str:

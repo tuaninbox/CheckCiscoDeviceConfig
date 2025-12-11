@@ -61,10 +61,10 @@ def git_commit_and_push(push=True):
         # Push to GitHub (optional)
         try:
             repo.git.push("origin", "main")
-            print("Pushed to GitHub")
-            success_logger.info("Pushed backup to GitHub successfully")
+            # print("Pushed to GitHub")
+            success_logger.info(f"Pushed backup in {backup_dir} to GitHub successfully")
         except Exception as e:
-            print("Push failed:", e)
+            # print("Push failed:", e)
             fail_logger.error(f"Push failed: {e}")
 
 
