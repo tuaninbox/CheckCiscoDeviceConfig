@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch
 
-from core.device import DeviceDataRetriever
+from CheckCiscoDeviceConfig.core.device.config import DeviceDataRetriever
 
 # Fake Netmiko connection
 class FakeConnection:

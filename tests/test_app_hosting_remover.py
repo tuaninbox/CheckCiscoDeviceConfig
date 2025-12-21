@@ -1,5 +1,5 @@
 import pytest
-from core.device import SecretSanitizer
+from CheckCiscoDeviceConfig.core.device.config import SecretSanitizer
 
 def test_remove_token_with_env():
     sanitizer = SecretSanitizer()

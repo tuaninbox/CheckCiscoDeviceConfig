@@ -1,0 +1,7 @@
+username: someuser
+secret: somesecret
+verification:
+  - command: "show run | in username"
+    expect: "someuser"
+  # - command: "show run | include router bgp"
+  #   expect: "router bgp"

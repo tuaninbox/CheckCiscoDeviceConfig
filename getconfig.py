@@ -14,9 +14,9 @@ import click, json
 from core.credentials import get_credentials
 from core.executor import run_parallel
 # from core.device import get_config, get_config_to_file
-from core.utility import format_msg, print_result
+from core.utility.utility import format_msg, print_result
 from core.logging_manager import setup_loggers
-from core.device import startinteractivesession, load_commands
+from core.device.config import startinteractivesession, load_commands
 from core.gitrepo import git_commit_and_push
 from pathlib import Path
 
@@ -114,24 +114,26 @@ def main(ctx, find, list, device, writefile, command, commandfile, interactive, 
         srcfile.seek(0)
         reader = csv.DictReader(srcfile)
 
-    # Choose run_func based on writefile
-    run_func = (lambda retriever: retriever.get_config_to_file()) if writefile else (lambda retriever: retriever.get_config())
+    # Decide whether to save configs to file or return them
+    config_mode = "file" if writefile else "return"
 
     results = run_parallel(
         reader,
         cmds,
         username,
         password,
-        run_func=run_func,
+        collector_type="config",          # <-- new explicit flag
+        config_mode=config_mode,          # <-- "file" or "return"
         success_logger=success_logger,
         fail_logger=fail_logger,
         debug=1,
         filterlist=filterlist if filterlist else None,
-        outfolder=writefile if writefile else None,
+        outfolder=writefile if writefile else None,   # used when config_mode="file"
         sanitizeconfig=True,
         removepassword=removepasswords,
     )
-    # print(results)
+
+    print(results)
     # Print results only if not writing to file
     if not writefile:
         for r in results:
