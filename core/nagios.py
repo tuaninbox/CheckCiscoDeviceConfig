@@ -1,45 +1,82 @@
 import requests
 import csv
 from core.credentials import get_nagios_api
+from config.config_loader import load_nagios_hostgroups
 
 nagios_host, nagios_apikey = get_nagios_api()
+nagios_hostgroups = load_nagios_hostgroups()
 
-def get_hostgroup_members_from_nagios(hostgroup_name):
-    url = f"https://{nagios_host}/nagiosxi/api/v1/config/hostgroups?pretty=1&apikey={nagios_apikey}&hostgroup_name={hostgroup_name}"
-    r = requests.get(url, verify=False)
-    return r.json().get("members", [])
 
-def get_device_list_from_nagios(nagios_host=nagios_host, nagios_apikey=nagios_apikey):
-    # Define the hostgroups you want to query
-    hostgroups = ["ConfigBackup_ios", "ConfigBackup_nxos"]
+def get_hostgroup_members_from_nagios(hostgroup_name, nagios_host=nagios_host, nagios_apikey=nagios_apikey):
+    url = f"https://{nagios_host}/nagiosxi/api/v1/config/hostgroup?pretty=1&apikey={nagios_apikey}&hostgroup_name={hostgroup_name}"
+    r = requests.get(url, verify=False, timeout=30)
+    r.raise_for_status()
+    payload = r.json()
+    members = payload[0].get("members", []) if payload else []
+    if isinstance(members, str):
+        members = [member.strip() for member in members.split(",") if member.strip()]
+    return members
 
-    # Build a dict mapping device -> OS
+
+def get_device_list_from_nagios(nagios_host=nagios_host, nagios_apikey=nagios_apikey, hostgroups=nagios_hostgroups):
+    # If no hostgroups provided, skip hostgroup processing and return ALL hosts
+    if not hostgroups:
+        url = f"https://{nagios_host}/nagiosxi/api/v1/config/host?pretty=1&apikey={nagios_apikey}&orderby=host_name:a"
+        r = requests.get(url, verify=False, timeout=30)
+        r.raise_for_status()
+        payload = r.json()
+        devices = payload if isinstance(payload, list) else payload.get("data", [])
+
+        results = []
+        for d in devices:
+            results.append({
+                "Host": d.get("host_name", ""),
+                "IP": d.get("address", ""),
+                "Port": "",
+                "Location": d.get("alias", ""),
+                "Group": "",
+                "OS": ""
+            })
+
+        with open("backup_devices.csv", "w", newline="") as csvfile:
+            fieldnames = ["Host", "IP", "Port", "Location", "Group", "OS"]
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(results)
+
+        return results
+
+    # Normal path: hostgroups provided
     backup_device_dict = {}
+    device_groups = {}
+
     for hg in hostgroups:
         os_type = hg.replace("ConfigBackup_", "").lower()
-        members = get_hostgroup_members_from_nagios(hg)
+        members = get_hostgroup_members_from_nagios(hg, nagios_host=nagios_host, nagios_apikey=nagios_apikey)
         for device in members:
-            backup_device_dict[device.lower()] = os_type
+            device_name = str(device).lower()
+            backup_device_dict[device_name] = os_type
+            device_groups[device_name] = hg
 
-    # Query all Nagios hosts
     url = f"https://{nagios_host}/nagiosxi/api/v1/config/host?pretty=1&apikey={nagios_apikey}&orderby=host_name:a"
-    r = requests.get(url, verify=False)
-    devices = r.json()
+    r = requests.get(url, verify=False, timeout=30)
+    r.raise_for_status()
+    payload = r.json()
+    devices = payload if isinstance(payload, list) else payload.get("data", [])
 
     results = []
     for d in devices:
-        host_name = d.get("host_name", "").lower()
+        host_name = str(d.get("host_name", "")).lower()
         if host_name in backup_device_dict:
             results.append({
                 "Host": d.get("host_name", ""),
                 "IP": d.get("address", ""),
                 "Port": "",
                 "Location": d.get("alias", ""),
-                "Group": d.get("hostgroup_name", ""),
-                "OS": backup_device_dict[host_name]  # Add OS info
+                "Group": device_groups.get(host_name, d.get("hostgroup_name", "")),
+                "OS": backup_device_dict[host_name]
             })
 
-    # Optional: write results to CSV
     with open("backup_devices.csv", "w", newline="") as csvfile:
         fieldnames = ["Host", "IP", "Port", "Location", "Group", "OS"]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)

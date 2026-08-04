@@ -1,4 +1,5 @@
 import configparser
+import re
 from pathlib import Path
 from core.logging_manager import setup_loggers
 
@@ -41,4 +42,18 @@ def load_backup_config():
         fail_logger.error(f"{CONFIG_FILE} missing required section: {e}")
         raise
     return backup_dir
+
+
+def load_nagios_hostgroups():
+    try:
+        config = _get_config()
+        raw_groups = config["nagios"].get("hostgroups", "")
+    except KeyError as e:
+        fail_logger.error(f"{CONFIG_FILE} missing required section: {e}")
+        raise
+
+    if not raw_groups:
+        return []
+
+    return [group.strip() for group in re.split(r"[\n,;]+", raw_groups) if group.strip()]
 

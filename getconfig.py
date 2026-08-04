@@ -13,6 +13,7 @@ import time, sys, datetime, csv, os
 import click, json
 from core.credentials import get_credentials
 from core.executor import run_parallel
+from core.nagios import get_device_list_from_nagios
 # from core.device import get_config, get_config_to_file
 from core.utility.utility import format_msg, print_result
 from core.logging_manager import setup_loggers
@@ -35,6 +36,17 @@ from pathlib import Path
 @click.option('-gco', '--gitcommitonly', is_flag=True, help='Commit only (no push)')
 @click.option('-rp', '--removepasswords',type=int,default=15,help='Remove passwords from configuration output')
 @click.pass_context
+
+def load_inventory_rows(list_value):
+    if not list_value:
+        raise click.UsageError("You must provide a device list source via -l, or use 'nagios'.")
+
+    if str(list_value).lower() == 'nagios':
+        return get_device_list_from_nagios()
+
+    with open(list_value, "rt") as srcfile:
+        return list(csv.DictReader(srcfile))
+
 
 def main(ctx, find, list, device, writefile, command, commandfile, interactive, git, gitcommitonly, removepasswords):
     success_logger, fail_logger = setup_loggers(logger_name="getconfig")
@@ -61,16 +73,14 @@ def main(ctx, find, list, device, writefile, command, commandfile, interactive, 
 
     username, password = get_credentials()
     try:
-        srcfile = open(list, "rt")
-        reader = csv.DictReader(srcfile)
+        inventory_rows = load_inventory_rows(list)
     except Exception as e:
         print(f"{datetime.datetime.now()}: {e}")
         sys.exit(1)
 
-
     # Interactive mode - GOOD
     if interactive:
-        for row in reader:
+        for row in inventory_rows:
             if row["Host"] == str(device):  # assuming 'site' == 'device'
                 startinteractivesession(
                     row["Host"],
@@ -80,7 +90,6 @@ def main(ctx, find, list, device, writefile, command, commandfile, interactive, 
                     # username if not row["Username"] else row["Username"],
                     # password if not row["Password"] else row["Password"],
                 )
-        srcfile.close()
         return
     
     # Build command list
@@ -101,24 +110,17 @@ def main(ctx, find, list, device, writefile, command, commandfile, interactive, 
     # Build filterlist if device specified
     filterlist = []
 
-    # reinitialize reader
-    srcfile.seek(0)              
-    reader = csv.DictReader(srcfile)  
     if device and not find:
-        filterlist = [device.lower() for r in reader if str(device).lower() == r["Host"].lower()]
+        filterlist = [device.lower() for r in inventory_rows if str(device).lower() == r["Host"].lower()]
         if not filterlist:
             print(format_msg(f"{device} is not in inventory", "YELLOW"))
-            srcfile.close()
             return
-        # Reset reader for run_parallel
-        srcfile.seek(0)
-        reader = csv.DictReader(srcfile)
 
     # Decide whether to save configs to file or return them
     config_mode = "file" if writefile else "return"
 
     results = run_parallel(
-        reader,
+        inventory_rows,
         cmds,
         username,
         password,
@@ -142,8 +144,6 @@ def main(ctx, find, list, device, writefile, command, commandfile, interactive, 
     # Time report
     t2 = time.perf_counter()
     print(format_msg(f"Finished after {t2 - t1}", "GREEN"))
-    srcfile.close()
-
     # Git actions
     if git:
         git_commit_and_push()  # commit + push
